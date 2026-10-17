@@ -1,0 +1,25 @@
+# Data never goes into the repo: ULB is ~150 MB (over GitHub's 100 MB limit)
+# and IEEE-CIS is under Kaggle competition rules.
+data/
+*.csv
+*.parquet
+*.npz
+
+# Credentials
+kaggle.json
+.env
+
+# Model weights downloaded by tabpfn / tabicl
+*.ckpt
+*.safetensors
+
+# Large raw outputs stay on Google Drive; only small summary tables are committed
+results/raw/
+
+# Python / Jupyter clutter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+.DS_Store

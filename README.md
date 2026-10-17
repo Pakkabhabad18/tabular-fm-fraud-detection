@@ -4,7 +4,7 @@
 
 Prakash Bhabad · IIIT Hyderabad · 2026
 
-> **Status:** proposal stage. The full proposal is in [`docs/proposal.pdf`](docs/proposal.pdf). Code, experiments and results will be added to this repository as the work progresses.
+> **Status:** setup. The proposal is in [`docs/proposal.pdf`](docs/proposal.pdf). Mid-evaluation: 2–4 Nov 2026. Final submission: 30 Nov 2026.
 
 ---
 
@@ -51,3 +51,20 @@ A negative result with a supported explanation, for example that the advantage d
 - PR-AUC against fraud rate for both model families, showing where they change order
 - A ranked comparison of context-construction policies with effect sizes
 - A verdict on where a tabular foundation model can sit in a fraud system: inline at authorisation, or in the offline review queue
+
+## Repository layout
+
+```
+docs/          proposal
+src/fraudicl/  project code (models.py pins the exact model checkpoints)
+notebooks/     experiments, run on Colab with a T4 GPU
+results/       small summary tables and figures (raw outputs stay on Google Drive)
+```
+
+Data is not stored in the repo. ULB is downloaded with `kagglehub` inside each notebook.
+
+## Running
+
+Open `notebooks/00_smoke_test.ipynb` in Colab (File → Open notebook → GitHub), select a T4 GPU and run all cells. It checks the data and runs every model once.
+
+Model versions are pinned on purpose: TabPFN v2 uses the original checkpoint from Hollmann et al. (2025), not the package's current default (v3.5), and TabICL uses the TabICLv2 checkpoint `tabicl-classifier-v2-20260212.ckpt`.

@@ -1,0 +1,11 @@
+# Core libraries pinned to the versions the code was written against (Oct 2026).
+# torch, numpy and pandas are left to whatever Colab / Ada already provides,
+# so pip does not replace the CUDA build of torch.
+tabpfn==9.2.0          # TabPFN v2 is selected explicitly in code; the package default is v3.5
+tabicl==2.2.0          # default checkpoint is TabICLv2 (tabicl-classifier-v2-20260212.ckpt)
+xgboost==3.4.1
+optuna==5.0.0
+imbalanced-learn==0.14.2   # SMOTE for the classical arm
+scikit-learn==1.9.1
+kagglehub==1.0.2       # downloads ULB without needing a Kaggle token
+matplotlib
