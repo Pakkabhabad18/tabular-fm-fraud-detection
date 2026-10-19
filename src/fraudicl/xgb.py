@@ -26,6 +26,7 @@ import optuna
 from xgboost import XGBClassifier
 
 VARIANTS = ("plain", "spw", "smote")
+SEARCH_VERSION = 2   # 2 = min_child_weight floor lowered from 1 to 1e-3 (20 Oct)
 MAX_TREES = 2000          # upper limit; early stopping picks the real number
 EARLY_STOP_ROUNDS = 50    # stop when validation PR-AUC hasn't improved for 50 trees
 
@@ -48,7 +49,13 @@ def suggest_params(trial: optuna.Trial, variant: str, neg_pos_ratio: float) -> d
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
         "subsample": trial.suggest_float("subsample", 0.5, 1.0),
         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-        "min_child_weight": trial.suggest_float("min_child_weight", 1.0, 20.0, log=True),
+        # Floor 1e-3, not 1. min_child_weight is the least total hessian a leaf may hold;
+        # at the start every row has hessian p(1-p), about 0.001 when frauds are 0.1% of
+        # the rows. With a floor of 1 a leaf needs ~1,000 rows, so a training set with
+        # 1-2 frauds cannot be split at all and XGBoost predicts a constant. The first
+        # search (floor 1) made matched-budget XGBoost score exactly the fraud rate in
+        # those cells, which was our search space failing, not XGBoost.
+        "min_child_weight": trial.suggest_float("min_child_weight", 1e-3, 20.0, log=True),
         "gamma": trial.suggest_float("gamma", 1e-8, 5.0, log=True),
         "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
         "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),

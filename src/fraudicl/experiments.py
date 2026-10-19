@@ -300,3 +300,28 @@ def archive_old_uniform_runs(out_dir) -> bool:
     os.makedirs(os.path.dirname(marker), exist_ok=True)
     open(marker, "w").write("uniform contexts are nested across k from here on\n")
     return moved
+
+
+def archive_xgb_search_v1(out_dir) -> bool:
+    """One-time move of every XGBoost result tuned with the first search space
+    (min_child_weight floor 1) to <out_dir>/archive_v1_xgb_search/, so that both
+    full-data and matched-budget XGBoost are retuned with the wider space.
+    Foundation-model runs and saved contexts are not touched. Safe to call every
+    session; returns True only on the call that moved something."""
+    import shutil
+
+    marker = os.path.join(out_dir, "raw", "XGB_SEARCH_V2")
+    if os.path.exists(marker):
+        return False
+    archive = os.path.join(out_dir, "archive_v1_xgb_search")
+    moved = False
+    for rel in ["raw/xgb", "xgb_params", "raw/xgb_matched", "xgb_matched_params"]:
+        src = os.path.join(out_dir, rel)
+        if os.path.exists(src):
+            dst = os.path.join(archive, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.move(src, dst)
+            moved = True
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    open(marker, "w").write("XGBoost search space v2: min_child_weight in [1e-3, 20]\n")
+    return moved

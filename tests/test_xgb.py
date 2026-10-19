@@ -5,7 +5,10 @@ Run with:  python -m pytest tests -q
 import numpy as np
 import pytest
 
-from fraudicl.xgb import VARIANTS, _resample_if_smote, fit_xgb, tune
+import optuna
+
+from fraudicl.experiments import archive_xgb_search_v1
+from fraudicl.xgb import VARIANTS, _resample_if_smote, fit_xgb, suggest_params, tune
 
 
 @pytest.fixture(scope="module")
@@ -50,3 +53,36 @@ def test_fit_is_reproducible(data):
     a = fit_xgb(X_tr, y_tr, X_val, y_val, p, seed=0).predict_proba(X_val)[:, 1]
     b = fit_xgb(X_tr, y_tr, X_val, y_val, p, seed=0).predict_proba(X_val)[:, 1]
     assert np.allclose(a, b)
+
+
+def test_search_space_allows_tiny_min_child_weight():
+    # The tuner must be able to pick a min_child_weight far below 1, otherwise
+    # a training set with 1-2 frauds can never be split.
+    params = suggest_params(optuna.trial.FixedTrial({
+        "max_depth": 4, "learning_rate": 0.1, "subsample": 1.0, "colsample_bytree": 1.0,
+        "min_child_weight": 1e-3, "gamma": 1e-8, "reg_alpha": 1e-8, "reg_lambda": 1e-8}), "plain", 10.0)
+    assert params["min_child_weight"] == 1e-3
+
+
+def test_two_frauds_learnable_with_small_min_child_weight():
+    rng = np.random.default_rng(3)
+    y = np.zeros(2000, int); y[[10, 900]] = 1
+    X = rng.normal(size=(2000, 10)) + 2.0 * y[:, None]
+    yv = (rng.random(5000) < 0.01).astype(int)
+    Xv = rng.normal(size=(5000, 10)) + 2.0 * yv[:, None]
+    from sklearn.metrics import average_precision_score as ap
+    p = {"max_depth": 6, "learning_rate": 0.1, "min_child_weight": 0.1}
+    assert ap(yv, fit_xgb(X, y, Xv, yv, p).predict_proba(Xv)[:, 1]) > 0.1
+    p["min_child_weight"] = 1.0   # the old floor: no split possible, constant scores
+    assert ap(yv, fit_xgb(X, y, Xv, yv, p).predict_proba(Xv)[:, 1]) < 0.05
+
+
+def test_archive_xgb_search_moves_only_xgb(tmp_path):
+    for rel in ["raw/xgb", "xgb_params", "raw/xgb_matched", "raw/tfm", "raw/contexts"]:
+        (tmp_path / rel).mkdir(parents=True)
+        (tmp_path / rel / "x.json").write_text("{}")
+    assert archive_xgb_search_v1(tmp_path) is True
+    assert not (tmp_path / "raw" / "xgb").exists() and not (tmp_path / "raw" / "xgb_matched").exists()
+    assert (tmp_path / "raw" / "tfm" / "x.json").exists() and (tmp_path / "raw" / "contexts" / "x.json").exists()
+    assert (tmp_path / "archive_v1_xgb_search" / "xgb_params" / "x.json").exists()
+    assert archive_xgb_search_v1(tmp_path) is False
