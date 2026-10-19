@@ -9,3 +9,4 @@ imbalanced-learn==0.14.2   # SMOTE for the classical arm
 scikit-learn==1.9.1
 kagglehub==1.0.2       # downloads ULB without needing a Kaggle token
 matplotlib
+pytest                 # runs tests/ before experiments
