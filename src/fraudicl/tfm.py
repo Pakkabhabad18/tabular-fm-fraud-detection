@@ -22,15 +22,22 @@ POLICIES = ("uniform",)
 def build_context(train_idx: np.ndarray, y: np.ndarray, k: int, policy: str, seed: int) -> np.ndarray:
     """Pick k context rows from one split's training rows.
 
-    The random generator is seeded with (seed, k), so a given seed and budget
-    always gets the same rows, and the matched-budget XGBoost (T6) can be trained
-    on exactly the rows the foundation model saw.
+    Uniform contexts are nested across k, the same way the fraud-rate levels are
+    nested: each seed puts the training pool in one fixed random order, and a
+    budget of k takes the first k rows of that order. So the 2K context is the 1K
+    context plus 1K more rows, and a change in PR-AUC from k = 1K to 2K comes from
+    those extra rows, not from a fresh random draw. (A first version drew each k
+    independently; on seed 0 that made the k-curves jump around, e.g. 0.5% fraud
+    with k = 2K holding fewer frauds than k = 1K.)
+
+    The order depends only on the seed, so the matched-budget XGBoost (T6) can be
+    trained on exactly the rows the foundation model saw.
     """
     if k > len(train_idx):
         raise ValueError(f"k={k} is larger than the training pool ({len(train_idx)} rows)")
-    rng = np.random.default_rng([seed, k])
     if policy == "uniform":
-        return np.sort(rng.choice(train_idx, size=k, replace=False))
+        order = np.random.default_rng(seed).permutation(train_idx)
+        return np.sort(order[:k])
     raise ValueError(f"unknown policy {policy!r}")
 
 

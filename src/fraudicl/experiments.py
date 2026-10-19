@@ -136,7 +136,13 @@ def get_context(out_dir, split, y, k, policy, seed):
 
     path = _context_path(out_dir, policy, split.level, k, seed)
     if os.path.exists(path):
-        return np.load(path)
+        saved = np.load(path)
+        # Guard against a stale file from an older version of the context code:
+        # the rows on Drive must be the rows the current code would pick.
+        if not np.array_equal(saved, build_context(split.train, y, k, policy, seed)):
+            raise RuntimeError(f"{path} was built by older context code; run "
+                               "archive_old_uniform_runs() first")
+        return saved
     ctx = build_context(split.train, y, k, policy, seed)
     np.save(path, ctx)
     return ctx
@@ -268,3 +274,29 @@ def summarise_by_k(df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index()
     g["level"] = pd.Categorical(g["level"], order, ordered=True)
     return g.sort_values(["model", "level", "k"]).reset_index(drop=True)
+
+
+def archive_old_uniform_runs(out_dir) -> bool:
+    """One-time move of the first T5/T6 runs (independent context draws per k) out of
+    the way, so they are rerun with nested contexts. Nothing is deleted: the old
+    files go to <out_dir>/archive_v1_independent_contexts/. Full-data XGBoost
+    (raw/xgb, xgb_params) is not touched. Safe to call every session: after the
+    first call it finds the marker file and does nothing. Returns True if it moved
+    anything."""
+    import shutil
+
+    marker = os.path.join(out_dir, "raw", "CONTEXTS_NESTED_V2")
+    if os.path.exists(marker):
+        return False
+    archive = os.path.join(out_dir, "archive_v1_independent_contexts")
+    moved = False
+    for rel in ["raw/tfm", "raw/xgb_matched", "raw/contexts", "xgb_matched_params"]:
+        src = os.path.join(out_dir, rel)
+        if os.path.exists(src):
+            dst = os.path.join(archive, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.move(src, dst)
+            moved = True
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    open(marker, "w").write("uniform contexts are nested across k from here on\n")
+    return moved

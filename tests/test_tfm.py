@@ -8,7 +8,8 @@ import pytest
 from sklearn.linear_model import LogisticRegression
 
 from fraudicl.data import make_splits
-from fraudicl.experiments import collect, get_context, run_matched_xgb, run_tfm_sweep, summarise_by_k
+from fraudicl.experiments import (archive_old_uniform_runs, collect, get_context,
+                                  run_matched_xgb, run_tfm_sweep, summarise_by_k)
 from fraudicl.tfm import build_context, feasible_budgets
 
 
@@ -81,3 +82,32 @@ def test_context_without_fraud_scores_as_no_skill(tmp_path):
     assert row.context_frauds == 0
     # constant scores: PR-AUC equals the test fraud rate
     assert row.pr_auc == pytest.approx(row.fraud_rate)
+
+
+def test_uniform_contexts_are_nested_across_k(fake):
+    # The 1K context must be inside the 2K context, which is inside the 5K one,
+    # so frauds in the context can only go up as k grows.
+    X, y, splits = fake
+    s = next(s for s in splits if s.level == "natural" and s.seed == 0)
+    ctx = {k: set(build_context(s.train, y, k, "uniform", seed=0)) for k in (1_000, 2_000, 5_000)}
+    assert ctx[1_000] <= ctx[2_000] <= ctx[5_000]
+
+
+def test_stale_context_file_is_refused(fake, tmp_path):
+    X, y, splits = fake
+    s = splits[0]
+    good = get_context(tmp_path, s, y, 500, "uniform", 0)
+    np.save(next((tmp_path / "raw" / "contexts").iterdir()), np.sort(s.train[-500:]))  # overwrite with different rows
+    with pytest.raises(RuntimeError):
+        get_context(tmp_path, s, y, 500, "uniform", 0)
+
+
+def test_archive_moves_old_runs_once(tmp_path):
+    for rel in ["raw/tfm", "raw/contexts", "raw/xgb"]:
+        (tmp_path / rel).mkdir(parents=True)
+        (tmp_path / rel / "x.json").write_text("{}")
+    assert archive_old_uniform_runs(tmp_path) is True
+    assert not (tmp_path / "raw" / "tfm").exists()
+    assert (tmp_path / "archive_v1_independent_contexts" / "raw" / "tfm" / "x.json").exists()
+    assert (tmp_path / "raw" / "xgb" / "x.json").exists()      # full-data XGBoost untouched
+    assert archive_old_uniform_runs(tmp_path) is False          # second call does nothing
