@@ -1,0 +1,4 @@
+431e76c7a7e44ec0
+SHA-256 (first 16 hex characters) of every train/val/test index array for seeds 0-4 and
+fraud rates 20, 5, 1, 0.5, natural, as built by fraudicl.data.make_splits on ULB.
+Rebuild with notebooks/01_data_splits.ipynb; the printed fingerprint must match this one.
