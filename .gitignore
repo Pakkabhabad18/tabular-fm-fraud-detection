@@ -23,3 +23,6 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Small summary tables in results/ are committed (the dataset itself is not)
+!results/*.csv
