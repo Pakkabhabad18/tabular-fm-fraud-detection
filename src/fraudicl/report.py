@@ -55,7 +55,14 @@ def load_runs(out_dir) -> pd.DataFrame:
             parts.append(collect(out_dir, family))
     df = pd.concat(parts, ignore_index=True)
     df["level"] = pd.Categorical(df["level"].astype(str), LEVEL_ORDER, ordered=True)
+    # full-data XGBoost has no context policy; label it so filters on policy work
+    df["policy"] = df["policy"].fillna("all rows") if "policy" in df else "all rows"
     return df
+
+
+def uniform_only(runs: pd.DataFrame) -> pd.DataFrame:
+    """Runs for the T5/T6 comparison: uniform contexts plus full-data XGBoost."""
+    return runs[runs.policy.isin(["uniform", "all rows"])]
 
 
 def largest_k(level: str, train_rows: dict) -> int:
@@ -71,6 +78,7 @@ def headline_table(runs: pd.DataFrame, train_rows: dict) -> pd.DataFrame:
     Full-data XGBoost uses all training rows. Each TFM and the matched XGBoost
     use the largest k at that fraud rate (see the module note).
     """
+    runs = uniform_only(runs)
     rows = []
     for level in [l for l in LEVEL_ORDER if l in train_rows]:   # only rates that were run
         k = largest_k(level, train_rows)
@@ -93,7 +101,8 @@ def headline_table(runs: pd.DataFrame, train_rows: dict) -> pd.DataFrame:
 
 def by_k_table(runs: pd.DataFrame) -> pd.DataFrame:
     """Mean and std of PR-AUC for every (model, fraud rate, k) cell."""
-    sub = runs[runs.model.isin(TFM_MODELS + [MATCHED_XGB])]
+    sub = uniform_only(runs)
+    sub = sub[sub.model.isin(TFM_MODELS + [MATCHED_XGB])]
     return (sub.groupby(["model", "level", "k"], observed=True)
                .agg(n_seeds=("seed", "nunique"), pr_auc_mean=("pr_auc", "mean"),
                     pr_auc_std=("pr_auc", "std"), context_frauds_mean=("context_frauds", "mean"),
@@ -254,6 +263,7 @@ def plot_vs_context_frauds(runs: pd.DataFrame, path: str, level: str = "natural"
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
+    runs = uniform_only(runs)
     sub = runs[runs.level.astype(str) == level]
     jitter = {"TabICLv2": 0.94, "TabPFN v2": 1.0, MATCHED_XGB: 1.06}   # nudge so points don't overlap
     for model in [*TFM_MODELS, MATCHED_XGB]:
@@ -278,5 +288,81 @@ def plot_vs_context_frauds(runs: pd.DataFrame, path: str, level: str = "natural"
     _style_axes(ax)
     ax.legend(frameon=False, fontsize=8.5, loc="lower right")
     fig.tight_layout()
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------- W1: context policies (T8)
+
+POLICY_ORDER = ["uniform", "stratified", "balanced", "knn", "knn_balanced",
+                "ensemble_uniform", "ensemble_balanced"]
+POLICY_LABEL = {"uniform": "Uniform (random k rows)", "stratified": "Stratified (fraud rate kept)",
+                "balanced": "Balanced (all frauds, up to k/2)", "knn": "kNN (nearest k rows)",
+                "knn_balanced": "kNN + all frauds", "ensemble_uniform": "Ensemble of 5 uniform",
+                "ensemble_balanced": "Ensemble of 5 balanced"}
+
+
+def policy_table(runs: pd.DataFrame, model: str, levels=("natural", "1")) -> pd.DataFrame:
+    """W1 ranking with effect sizes for one model.
+
+    For every (fraud rate, k, policy): mean and std PR-AUC over seeds, and the
+    effect against the uniform policy computed PAIRED by seed (same split, same
+    test rows): mean difference, its std, and in how many seeds the policy beat
+    uniform. Pairing removes the split-to-split noise that both policies share.
+    """
+    sub = runs[(runs.model == model) & (runs.level.astype(str).isin(levels))]
+    base = sub[sub.policy == "uniform"].set_index(["level", "k", "seed"]).pr_auc
+    rows = []
+    for (level, k, policy), g in sub.groupby(["level", "k", "policy"], observed=True):
+        diffs = (g.set_index(["level", "k", "seed"]).pr_auc - base).dropna()
+        rows.append({
+            "model": model, "level": str(level), "k": int(k), "policy": policy,
+            "n_seeds": g.seed.nunique(), "pr_auc_mean": g.pr_auc.mean(), "pr_auc_std": g.pr_auc.std(),
+            "context_frauds_mean": g.context_frauds.mean(),
+            "diff_vs_uniform_mean": diffs.mean() if len(diffs) else np.nan,
+            "diff_vs_uniform_std": diffs.std() if len(diffs) > 1 else np.nan,
+            "seeds_better_than_uniform": int((diffs > 0).sum()),
+        })
+    out = pd.DataFrame(rows)
+    out["policy"] = pd.Categorical(out.policy, POLICY_ORDER, ordered=True)
+    return out.sort_values(["level", "k", "policy"]).reset_index(drop=True)
+
+
+def plot_policies(table: pd.DataFrame, xgb_runs: pd.DataFrame, path: str, levels=("natural", "1")):
+    """Figure 4: PR-AUC against k for every context policy, one panel per fraud rate.
+
+    Policies are told apart by colour AND marker shape. The flat blue line is
+    all-data XGBoost at that fraud rate.
+    """
+    import matplotlib.pyplot as plt
+
+    colors = ["#52514e", "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"]
+    markers = ["o", "s", "^", "v", "D", "P", "X"]
+    fig, axes = plt.subplots(1, len(levels), figsize=(5.2 * len(levels), 3.9), dpi=150, sharey=True)
+    axes = np.atleast_1d(axes)
+    for ax, level in zip(axes, levels):
+        t = table[table.level == level]
+        for policy, c, mk in zip(POLICY_ORDER, colors, markers):
+            p = t[t.policy == policy].sort_values("k")
+            if p.empty:
+                continue
+            ax.plot(p.k, p.pr_auc_mean, color=c, marker=mk, ms=6, lw=1.8, ls="--" if policy == "uniform" else "-",
+                    label=POLICY_LABEL[policy], markeredgecolor="white", markeredgewidth=0.8)
+        ref = xgb_runs[(xgb_runs.model == HEADLINE_XGB) & (xgb_runs.level.astype(str) == level)]
+        if not ref.empty:
+            ax.axhline(ref.pr_auc.mean(), color="#2a78d6", lw=1.2, alpha=0.6, label="XGBoost, all training rows")
+        ax.set_xscale("log")
+        ax.set_xticks(CONTEXT_BUDGETS)
+        ax.set_xticklabels([f"{k // 1000}K" for k in CONTEXT_BUDGETS])
+        ax.minorticks_off()
+        ax.set_xlim(800, 12_500)
+        ax.set_title(f"fraud rate {LEVEL_LABEL[level]}", color=INK, fontsize=10)
+        ax.set_xlabel("context size k", color=INK, fontsize=9.5)
+        _style_axes(ax)
+    axes[0].set_ylabel(f"Test PR-AUC ({table.model.iloc[0]}, mean over seeds)", color=INK, fontsize=9.5)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False, fontsize=8.5,
+               bbox_to_anchor=(0.5, -0.08))
+    fig.tight_layout(rect=(0, 0.1, 1, 1))
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)

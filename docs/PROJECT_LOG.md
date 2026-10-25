@@ -236,9 +236,63 @@ the first W1 comparison (stratified, class-balanced, kNN, ensemble of contexts).
 
 ---
 
+## 25 Oct: context policies (task T8, workstream W1)
+
+### How the context is given, and why the answer depends on it
+
+A TFM has no training step. `model.fit(X[ctx], y[ctx])` only stores the context rows
+and their labels. At `predict_proba(X_test)` each test row is passed through the
+network together with all context rows, and attention lets it compare itself with
+every labelled example. So the context is the model's entire knowledge of the task:
+**change the context and the predictions change.** This is not a flaw to hide; it is
+the variable the project studies.
+
+How I control it:
+
+1. **Reproducible contexts.** Every context is built by a fixed rule from a seed, and
+   its row indices are saved to Drive. Rerunning gives exactly the same rows, and the
+   code refuses to reuse a saved context that the current rule would not produce.
+2. **Same rows for the classical arm.** Matched XGBoost is trained on the saved
+   context rows, so both families see identical data.
+3. **Noise measured, not ignored.** Each split seed also draws a different context,
+   so the ± std over 5 seeds includes context noise. A separate run holds the split
+   fixed and redraws only the context 5 times, which measures context noise on its
+   own.
+4. **Choosing the context deliberately is the experiment.** W1 compares rules for
+   choosing it. The ensemble policies average 5 different contexts, which both uses
+   more of the training data and reduces the dependence on any single draw.
+
+### Policies implemented
+
+| Policy | Rule | Why test it |
+| --- | --- | --- |
+| uniform | k random training rows | baseline from T5 |
+| stratified | fraud rate of the pool kept exactly, at least 1 fraud | removes the luck of a uniform draw (e.g. 0 frauds at k = 1K) |
+| balanced | all training frauds up to k/2, rest random legitimate | below 1% fraud this shows the model all 295 frauds instead of ~19 |
+| knn | per cluster of rows to predict, the k nearest training rows (standardised features) | the proposal's query-conditional retrieval |
+| knn_balanced | all frauds up to k/2 plus the nearest legitimate rows | plain kNN can return no fraud at all near legitimate clusters |
+| ensemble_uniform | 5 non-overlapping uniform contexts, log-odds averaged | uses 5× more training rows than one context holds |
+| ensemble_balanced | 5 contexts sharing all frauds, each with its own legitimate rows | EasyEnsemble from classical imbalanced learning, applied to contexts |
+
+All single-context policies are nested across k, like the uniform one.
+
+**Choices and reasons.**
+- **kNN per cluster, not per row.** A separate context per test row would mean ~57,000 model fits at 0.172%. Rows to predict are clustered (about 1,000 per cluster) and each cluster gets the training rows nearest its centre. Validation and test are clustered separately.
+- **Standardised distances.** Amount and Time have far larger ranges than V1-V28 and would decide the neighbours on their own otherwise.
+- **Ensembles only at k = 1K and 10K.** Each costs 5 single runs.
+- **TabICLv2 for the full W1 sweep.** It is about 8× faster than TabPFN v2 and scored about the same in T5. TabPFN v2 runs the stratified and balanced policies on seed 0 if GPU time allows.
+- **Effect sizes are paired by seed.** A policy is compared with uniform on the same split and the same test rows, which removes the noise both share.
+
+**Expected result, to be checked.** Balanced and ensemble policies should close part
+of the ~0.10 gap at 0.172% because they show the model many more frauds. kNN alone
+may do worse there, because the nearest rows to most test clusters are legitimate.
+
+---
+
 ## Open questions I am tracking
 
 - Does the few-shot advantage hold across all 5 seeds once matched XGBoost uses the retuned search space?
 - How much of the 0.10 gap at 0.172% does a class-balanced context close?
 - Is the TFM gain from more context rows, or from more frauds in the context? (Planned follow-up: hold the number of frauds fixed and vary their share.)
+- How large is context-only noise compared with split-to-split noise? (Measured in notebook 05, cell 6.)
 - Do TFM probabilities stay calibrated at 0.172%, and does τ = π₁ still work as a threshold (RQ3)?

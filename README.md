@@ -80,11 +80,13 @@ src/fraudicl/  project code
   metrics.py     every metric and the paired bootstrap
   models.py      model factories with pinned checkpoints
   xgb.py         XGBoost variants and Optuna tuning
-  tfm.py         context construction for the foundation models
+  tfm.py         context policies for the foundation models (uniform, stratified,
+                 balanced, kNN, ensembles)
   experiments.py resumable experiment loops (results saved per run)
   report.py      tables, figures and significance tests
 tests/         unit tests (python -m pytest tests -q)
-notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models, 04 results
+notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models (uniform context),
+               04 results, 05 context policies (W1)
 results/       summary tables and figures (raw per-run outputs stay on Google Drive);
                archive_* files are superseded runs kept for the record
 ```
@@ -93,6 +95,6 @@ Data is not stored in the repo. ULB is downloaded with `kagglehub` inside each n
 
 ## Running
 
-Run the notebooks in order on Colab (File → Open notebook → GitHub). 00, 02 and 03 need a T4 GPU; 01 and 04 run on CPU. Every experiment notebook saves each finished run to Google Drive and skips it on a rerun, so a disconnected session can simply be run again.
+Run the notebooks in order on Colab (File → Open notebook → GitHub). 00, 02, 03 and 05 need a T4 GPU; 01 and 04 run on CPU. Every experiment notebook saves each finished run to Google Drive and skips it on a rerun, so a disconnected session can simply be run again.
 
 Model versions are pinned on purpose: TabPFN v2 uses the original checkpoint from Hollmann et al. (2025), not the package's current default (v3.5), and TabICL uses the TabICLv2 checkpoint `tabicl-classifier-v2-20260212.ckpt`.

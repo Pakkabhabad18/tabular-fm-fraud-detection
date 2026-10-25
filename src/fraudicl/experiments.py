@@ -325,3 +325,131 @@ def archive_xgb_search_v1(out_dir) -> bool:
     os.makedirs(os.path.dirname(marker), exist_ok=True)
     open(marker, "w").write("XGBoost search space v2: min_child_weight in [1e-3, 20]\n")
     return moved
+
+
+# ====================================================================== T8: context policies (W1)
+
+def _fit_predict(make, seed, X, y, ctx, *X_queries):
+    """Fit one foundation model on a context and score each array in X_queries.
+    Returns None if the context has no fraud (the model would have nothing to
+    compare against). One fit serves every query array."""
+    from .tfm import predict_in_batches
+
+    if y[ctx].sum() == 0:
+        return None
+    model = make(seed)
+    model.fit(X[ctx], y[ctx])
+    preds = [predict_in_batches(model, Xq) for Xq in X_queries]
+    return preds[0] if len(preds) == 1 else preds
+
+
+def run_policy_sweep(X, y, splits, out_dir, model_makers: dict, policies, levels, budgets,
+                     seeds, m_ensemble=5, ensemble_budgets=None):
+    """W1: every context policy, for each (model, seed, fraud rate, k).
+
+    Single-context policies (uniform, stratified, balanced) reuse run_tfm_sweep, so
+    they are saved and scored exactly like the T5 runs. kNN and ensemble policies
+    need more than one context per run and are handled here. Results go in the
+    same "tfm" folder with the policy in the file name, so report.py sees them all.
+
+    ensemble_budgets limits which k the ensembles run at. An ensemble of m contexts
+    costs m times a single context, so by default they run at the smallest and the
+    largest k only.
+    """
+    from .metrics import all_metrics, best_f1_threshold
+    from .tfm import (GROUP_POLICIES, SINGLE_POLICIES, average_log_odds, ensemble_contexts,
+                      feasible_budgets, knn_groups)
+
+    for policy in policies:
+        if policy in SINGLE_POLICIES:
+            run_tfm_sweep(X, y, splits, out_dir, model_makers, levels, budgets, seeds, policy=policy)
+    by_key = {(s.seed, s.level): s for s in splits}
+    ens_budgets = ensemble_budgets or [min(budgets), max(budgets)]
+    for model_name, make in model_makers.items():
+        tag = model_name.lower().replace(" ", "")
+        for seed in seeds:
+            for level in levels:
+                s = by_key[seed, level]
+                for policy in policies:
+                    if policy in SINGLE_POLICIES:
+                        continue
+                    ks = feasible_budgets(s.train, budgets)
+                    if policy.startswith("ensemble"):
+                        ks = [k for k in ks if k in ens_budgets]
+                    for k in ks:
+                        name = f"{tag}_{policy}__{level}__k{k}__seed{seed}"
+                        if _done(out_dir, "tfm", name):
+                            continue
+                        _gpu_peak_reset()
+                        t0 = time.perf_counter()
+                        if policy in GROUP_POLICIES:
+                            # one context per cluster of query rows, built separately
+                            # for validation and test so neither sees the other
+                            val_s, test_s = np.zeros(len(s.val)), np.zeros(len(s.test))
+                            frauds, rows_no_fraud = [], 0
+                            for part, scores in ((s.val, val_s), (s.test, test_s)):
+                                for mask, ctx in knn_groups(s.train, X, y, X[part], k, policy, seed):
+                                    p = _fit_predict(make, seed, X, y, ctx, X[part][mask])
+                                    if part is s.test:
+                                        frauds.append(int(y[ctx].sum()))
+                                        rows_no_fraud += int(mask.sum()) if p is None else 0
+                                    if p is not None:
+                                        scores[mask] = p
+                            extra = {"context_frauds": float(np.mean(frauds)), "n_contexts": len(frauds),
+                                     "test_share_scored_without_fraud": rows_no_fraud / len(s.test)}
+                        else:
+                            base = policy.split("_", 1)[1]
+                            ctxs = ensemble_contexts(s.train, y, k, base, seed, m_ensemble)
+                            vals, tests = [], []
+                            for ctx in ctxs:
+                                p = _fit_predict(make, seed, X, y, ctx, X[s.val], X[s.test])
+                                if p is None:
+                                    continue   # a context with no fraud adds no information; skip it
+                                vals.append(p[0])
+                                tests.append(p[1])
+                            val_s = average_log_odds(vals) if vals else np.zeros(len(s.val))
+                            test_s = average_log_odds(tests) if tests else np.zeros(len(s.test))
+                            extra = {"context_frauds": float(np.mean([y[c].sum() for c in ctxs])),
+                                     "n_contexts": len(ctxs), "n_contexts_used": len(vals)}
+                        elapsed = time.perf_counter() - t0
+                        thr = best_f1_threshold(y[s.val], val_s)
+                        row = {"family": "tfm", "model": model_name, "policy": policy,
+                               "level": level, "seed": seed, "k": k, **extra,
+                               "fit_predict_s": round(elapsed, 1), "peak_gpu_gb": _gpu_peak_gb(),
+                               "val_threshold": thr, **all_metrics(y[s.test], test_s, threshold=thr)}
+                        _save_run(out_dir, "tfm", name, row, s.val, val_s, s.test, test_s)
+                        print(f"  {name}: test PR-AUC {row['pr_auc']:.4f}, {elapsed:.0f}s", flush=True)
+
+
+def run_context_variance(X, y, split, out_dir, make, model_name, k, context_seeds):
+    """How much does the answer change if only the context changes?
+
+    The split (train/test rows) is held fixed and the uniform context of size k is
+    drawn again with different random seeds. The spread of test PR-AUC across
+    these draws is pure context sensitivity. Comparing it with the spread across
+    the 5 split seeds (which change both the split and the context) shows how much
+    of the run-to-run noise comes from the context alone.
+    """
+    from .metrics import pr_auc
+    from .tfm import predict_in_batches
+
+    tag = model_name.lower().replace(" ", "")
+    folder = os.path.join(out_dir, "raw", "context_variance")
+    os.makedirs(folder, exist_ok=True)
+    rows = []
+    for cs in context_seeds:
+        path = os.path.join(folder, f"{tag}__{split.level}__k{k}__split{split.seed}__ctx{cs}.json")
+        if os.path.exists(path):
+            rows.append(json.load(open(path)))
+            continue
+        # context seed 1000 + cs keeps these draws apart from the seed-0..4 contexts
+        ctx = np.sort(np.random.default_rng(1000 + cs).permutation(split.train)[:k])
+        model = make(split.seed)
+        model.fit(X[ctx], y[ctx])
+        s = predict_in_batches(model, X[split.test])
+        row = {"model": model_name, "level": split.level, "k": k, "split_seed": split.seed,
+               "context_seed": cs, "context_frauds": int(y[ctx].sum()), "pr_auc": pr_auc(y[split.test], s)}
+        json.dump(row, open(path, "w"), indent=2)
+        rows.append(row)
+        print(f"  context {cs}: {row['context_frauds']} frauds, PR-AUC {row['pr_auc']:.4f}", flush=True)
+    return pd.DataFrame(rows)

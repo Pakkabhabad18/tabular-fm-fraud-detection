@@ -32,6 +32,23 @@ about 17 frauds, so most of the fraud information is simply never shown to the m
 
 ---
 
+**Q. If the prediction depends on the context, how do you give the context, and isn't the answer just random?**
+The model has no training step: `fit` only stores the context rows and labels, and
+at prediction time each test row attends to all of them. So yes, a different context
+gives different predictions. That dependence is what the project studies, and it is
+controlled in four ways:
+1. Every context is built from a seed by a fixed rule and its row indices are saved, so a run can be repeated exactly.
+2. XGBoost is trained on the same saved rows, so both families see identical data.
+3. Five seeds give five different contexts, so the reported ± std includes context noise. A separate test redraws only the context on a fixed split to measure that noise on its own.
+4. The W1 policies replace a random choice with a deliberate one (balanced, kNN), and the ensemble policies average 5 contexts so no single draw decides the answer.
+
+**Q. Isn't that the same as XGBoost giving a different model on different training data?**
+Yes, it's the same idea. The difference is cost and size: XGBoost can use all 170K
+training rows, while a TFM's context is limited to about 10K. Which 10K is chosen
+therefore matters much more for a TFM.
+
+---
+
 ## Data and splits
 
 **Q. Why ULB, and how do you get different fraud rates?**
@@ -129,6 +146,23 @@ seed spread), so the fix only matters for tiny training sets.
 **Q. Why use the largest k in the headline instead of the best k?**
 Picking the best k after seeing test scores would flatter the TFMs. The largest k
 that fits is a rule fixed in advance.
+
+---
+
+**Q. Which context policies did you compare, and why those?**
+Uniform (baseline), stratified (keeps the fraud rate, removes draw luck), balanced
+(all training frauds up to half the context), kNN and kNN with all frauds
+(query-conditional retrieval, as in LoCalPFN), and ensembles of 5 uniform or 5
+balanced contexts averaged in log-odds (the EasyEnsemble idea applied to contexts).
+Each one targets a specific reason the uniform context fails below 1%: too few
+frauds, frauds that aren't relevant to the row being scored, or too little of the
+training data used.
+
+**Q. Why is kNN done per cluster and not per test row?**
+One context per test row would be ~57,000 model fits at 0.172%. I cluster the rows
+to predict (about 1,000 per cluster) and retrieve the nearest training rows to each
+cluster centre, in standardised features so Amount and Time don't dominate the
+distance.
 
 ---
 
