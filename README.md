@@ -4,7 +4,7 @@
 
 Prakash Bhabad · IIIT Hyderabad · 2026
 
-> **Status:** setup. The proposal is in [`docs/proposal.pdf`](docs/proposal.pdf). Mid-evaluation: 2–4 Nov 2026. Final submission: 30 Nov 2026.
+> **Status (25 Oct 2026):** classical arm done (5 seeds); foundation-model sweep in progress (seed 0 done). Proposal: [`docs/proposal.pdf`](docs/proposal.pdf). Step-by-step record: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md). Mid-evaluation: 2–4 Nov 2026. Final submission: 30 Nov 2026.
 
 ---
 
@@ -52,19 +52,47 @@ A negative result with a supported explanation, for example that the advantage d
 - A ranked comparison of context-construction policies with effect sizes
 - A verdict on where a tabular foundation model can sit in a fraud system: inline at authorisation, or in the offline review queue
 
+## Results so far
+
+Full-data XGBoost (plain variant, mean ± std over 5 seeds) against the best foundation model with a uniform context (seed 0 only, preliminary):
+
+| Fraud rate | XGBoost PR-AUC | Best TFM PR-AUC (seed 0) | Frauds in a 10K uniform context |
+| --- | --- | --- | --- |
+| 20% | 0.966 ± 0.009 | 0.963 | n/a (pool is 1,475 rows) |
+| 5% | 0.930 ± 0.014 | 0.931 | n/a (k ≤ 5K) |
+| 1% | 0.894 ± 0.016 | 0.855 | 104 |
+| 0.5% | 0.881 ± 0.020 | 0.794 | 49 |
+| 0.172% | 0.865 ± 0.022 | 0.767 | 19 |
+
+- ROC-AUC stays near 0.98 at every fraud rate while PR-AUC falls, which is why PR-AUC is the headline metric.
+- `scale_pos_weight` and SMOTE do not beat plain XGBoost with a tuned threshold, and SMOTE gives worse-calibrated probabilities.
+- Below 1%, a uniform context shows the foundation models only a small share of the training frauds. Class-aware contexts (next step) target this gap.
+
+Details, reasons and corrections: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md). Expected evaluation questions: [`docs/EVAL_QA.md`](docs/EVAL_QA.md).
+
 ## Repository layout
 
 ```
-docs/          proposal
-src/fraudicl/  project code (models.py pins the exact model checkpoints)
-notebooks/     experiments, run on Colab with a T4 GPU
-results/       small summary tables and figures (raw outputs stay on Google Drive)
+docs/          proposal, project log, evaluation Q&A
+src/fraudicl/  project code
+  config.py      seeds, split fractions, fraud rates, context sizes
+  data.py        loading ULB, building and fingerprinting the splits
+  metrics.py     every metric and the paired bootstrap
+  models.py      model factories with pinned checkpoints
+  xgb.py         XGBoost variants and Optuna tuning
+  tfm.py         context construction for the foundation models
+  experiments.py resumable experiment loops (results saved per run)
+  report.py      tables, figures and significance tests
+tests/         unit tests (python -m pytest tests -q)
+notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models, 04 results
+results/       summary tables and figures (raw per-run outputs stay on Google Drive);
+               archive_* files are superseded runs kept for the record
 ```
 
 Data is not stored in the repo. ULB is downloaded with `kagglehub` inside each notebook.
 
 ## Running
 
-Open `notebooks/00_smoke_test.ipynb` in Colab (File → Open notebook → GitHub), select a T4 GPU and run all cells. It checks the data and runs every model once.
+Run the notebooks in order on Colab (File → Open notebook → GitHub). 00, 02 and 03 need a T4 GPU; 01 and 04 run on CPU. Every experiment notebook saves each finished run to Google Drive and skips it on a rerun, so a disconnected session can simply be run again.
 
 Model versions are pinned on purpose: TabPFN v2 uses the original checkpoint from Hollmann et al. (2025), not the package's current default (v3.5), and TabICL uses the TabICLv2 checkpoint `tabicl-classifier-v2-20260212.ckpt`.
