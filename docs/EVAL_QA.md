@@ -166,6 +166,27 @@ distance.
 
 ---
 
+**Q. Are the predicted probabilities meaningful, or only the ranking?**
+PR-AUC only uses the ranking. For probabilities I measure ECE and Brier score. Full-data
+XGBoost is trained on the real fraud rate and should be close to calibrated. A TFM's
+probabilities follow its context's fraud rate, so a balanced context (~3% fraud)
+over-predicts at a 0.172% real rate. I correct this with Bayes' rule (prior
+correction), which rescales the probabilities without changing their order, so PR-AUC
+is unaffected.
+
+**Q. What threshold would you use in practice?**
+I compare four on the same test rows: 0.5 (library default), π₁ (McDowell et al.'s
+rule, tested only down to 5%), the F1-best threshold from validation, and a fixed
+alert budget of the top 0.1% of transactions. A fraud team usually works to a budget
+(how many cases they can review per day), so the budget rule answers the practical
+question: of the ~57 alerts a day, how many are real fraud?
+
+**Q. Why does the prior correction not change PR-AUC?**
+It is a monotone function of the probability: if p_a > p_b before, then p'_a > p'_b
+after. PR-AUC depends only on the order of the scores.
+
+---
+
 ## Results so far
 
 **Q. What is the main result so far?**

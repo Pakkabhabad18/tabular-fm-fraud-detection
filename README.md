@@ -84,6 +84,7 @@ src/fraudicl/  project code
                  balanced, kNN, ensembles)
   experiments.py resumable experiment loops (results saved per run)
   report.py      tables, figures and significance tests
+  calibration.py W2: prior correction, ECE/Brier, threshold rules, reliability plot
 tests/         unit tests (python -m pytest tests -q)
 notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models (uniform context),
                04 results, 05 context policies (W1)

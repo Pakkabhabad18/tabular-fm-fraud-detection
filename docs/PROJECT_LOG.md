@@ -289,10 +289,50 @@ may do worse there, because the nearest rows to most test clusters are legitimat
 
 ---
 
+## 28 Oct: calibration and thresholds (workstream W2, research question 3)
+
+**What.** `calibration.py` takes every saved run and checks two things: whether the
+predicted probabilities can be trusted (calibration), and where the alarm threshold
+should go. It works on saved scores only, so it runs on a CPU and needs no new
+GPU time.
+
+**Why prior correction is needed.** A foundation model's probabilities follow the
+fraud rate of its *context*. A balanced context at the natural rate is ~3% fraud
+(295 of 10K rows) while real traffic is 0.172%, so the model's probabilities come
+out roughly 17 times too high. Bayes' rule fixes this exactly when only the class
+balance differs:
+
+    p' = p·r1 / (p·r1 + (1 − p)·r0),   r1 = π_true / π_context,   r0 = (1 − π_true) / (1 − π_context)
+
+The correction is monotone, so it never changes the order of the scores: PR-AUC,
+ROC-AUC and the top-k metrics are identical before and after. Only calibration (ECE,
+Brier score) and fixed thresholds change. A unit test checks this.
+
+**Threshold rules compared on the same test rows.**
+
+| Rule | Meaning |
+| --- | --- |
+| τ = 0.5 | what `predict()` does by default |
+| τ = π₁ | McDowell et al. (2026): flag a row when its fraud probability exceeds the base rate; they tested it down to 5% |
+| τ = F1-best on validation | tuned on validation, then frozen for test |
+| top 0.1% budget | flag exactly the 0.1% highest-scoring rows (≈57 alerts on the natural test set), roughly a review team's daily capacity |
+
+**Choices.**
+- kNN policies are left out of W2: their context changes per group of rows, so no single context fraud rate describes them.
+- Only plain XGBoost: SMOTE and `scale_pos_weight` change the training prior in ways a single rate doesn't capture. Plain XGBoost is trained on the true rate and needs no correction, so it is the calibration reference.
+- The alert budget is applied by rank, not by score, so tied scores can't push the number of alerts over budget.
+
+**Expected result, to be checked on the real runs.**
+- Uniform contexts and XGBoost should already be close to calibrated (context rate ≈ real rate).
+- Balanced contexts should over-predict before correction and be close to calibrated after.
+- τ = π₁ at 0.172% means flagging anything above 0.0017. That will likely flag far more rows than there are frauds, which would mean the rule does not carry over two orders of magnitude below where it was tested. That outcome would answer RQ3.
+
+---
+
 ## Open questions I am tracking
 
 - Does the few-shot advantage hold across all 5 seeds once matched XGBoost uses the retuned search space?
 - How much of the 0.10 gap at 0.172% does a class-balanced context close?
 - Is the TFM gain from more context rows, or from more frauds in the context? (Planned follow-up: hold the number of frauds fixed and vary their share.)
 - How large is context-only noise compared with split-to-split noise? (Measured in notebook 05, cell 6.)
-- Do TFM probabilities stay calibrated at 0.172%, and does τ = π₁ still work as a threshold (RQ3)?
+- Do TFM probabilities stay calibrated at 0.172%, and does τ = π₁ still work as a threshold (RQ3)? (Code ready: notebook 04, cells 6c-6e.)
