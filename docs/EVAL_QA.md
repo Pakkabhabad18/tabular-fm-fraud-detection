@@ -219,6 +219,24 @@ measured across dataset sizes (W4).
 
 ---
 
+**Q. The TFMs score well. Are they overfitting or memorising the data?**
+They can't overfit in the usual sense: the weights are frozen and never see our
+training rows as training data. But a score can still be inflated, so I check four
+things in notebook 06:
+1. No validation or test row is ever in a context (all saved contexts are checked).
+2. ULB has 1,081 duplicated transactions. I recompute PR-AUC without test rows that have an exact copy in training.
+3. Both checkpoints were pretrained only on synthetic tables. To test memorisation directly, I shuffle the context labels: a model that learns from its context falls to chance.
+4. The TFM vs XGBoost differences are tested with a paired bootstrap pooled over the 5 seeds, with Holm's correction for testing many cells.
+
+**Q. Do the TFMs really beat XGBoost when frauds are scarce?**
+Not full-data XGBoost: it is about 0.10 ahead at 0.172%. Against XGBoost trained on
+the same rows, the TFMs are ahead by 0.02-0.06 whenever the context holds fewer than
+~10 frauds, in every such cell. I noticed this after seeing the results, so I treat it
+as a hypothesis: it is tested on the existing runs in notebook 06 and then confirmed
+on fresh contexts that I haven't looked at.
+
+---
+
 ## Mistakes and limitations
 
 **Q. Did anything go wrong?**

@@ -329,9 +329,56 @@ Brier score) and fixed thresholds change. A unit test checks this.
 
 ---
 
+## 28 Oct: uniform contexts finished over 5 seeds (T5, T6)
+
+**What.** Notebook 03 for seeds 1-4. Every cell now has 5 seeds and no context
+without a fraud. Table: `results/t5_t6_uniform_by_k_5seeds.csv`.
+
+**Headline (largest k that fits, PR-AUC mean ± std over 5 seeds).**
+
+| Fraud rate | k | TabICLv2 | TabPFN v2 | XGBoost, same k rows | XGBoost, all rows |
+| --- | --- | --- | --- | --- | --- |
+| 20% | 1K | 0.970 ± 0.007 | 0.969 ± 0.011 | 0.961 ± 0.016 | 0.966 |
+| 5% | 5K | 0.944 ± 0.012 | 0.932 ± 0.015 | 0.932 ± 0.009 | 0.930 |
+| 1% | 10K | 0.870 ± 0.034 | 0.865 ± 0.009 | 0.869 ± 0.023 | 0.894 |
+| 0.5% | 10K | 0.820 ± 0.046 | 0.831 ± 0.025 | 0.826 ± 0.019 | 0.881 |
+| 0.172% | 10K | 0.763 ± 0.020 | 0.741 ± 0.023 | 0.780 ± 0.043 | 0.865 |
+
+**What it means.**
+- TFMs tie with full-data XGBoost at 20% and 5% and fall behind below 1%, by about 0.10 at 0.172%.
+- On the same k rows the families are level at large k. The gap to full-data XGBoost comes from what the context holds (16 of 295 training frauds at 0.172%), not from the model family.
+- With 3 seeds, matched XGBoost looked ahead at 0.172% (0.803). With 5 it is 0.780 ± 0.043 and within noise of TabICLv2. One lucky seed was enough to create a difference that wasn't there.
+
+**Something I noticed after looking at the numbers.** In every cell where the
+context holds fewer than about 10 frauds (0.172% at 1K and 2K, 0.5% at 1K and 2K,
+1% at 1K), both TFMs are ahead of XGBoost on the same rows, by 0.02-0.06. Once the
+context holds 25+ frauds they are level. Each cell alone is within noise, and I
+found the pattern by looking at test results, so for now this is a hypothesis, not
+a finding. It needs a significance test and then a confirmatory run on contexts
+that haven't been looked at.
+
+---
+
+## 28 Oct: are the scores real? (notebook 06, `checks.py`)
+
+**Why.** A TFM never trains on our data, so it can't overfit in the usual sense.
+But a score can still be inflated, and a paper claim needs these ruled out:
+
+1. **Index leakage.** A validation or test row inside a context would show the model the answer. Check: every saved context must be a subset of the training rows.
+2. **Duplicated transactions.** ULB has 1,081 exact duplicate rows. A test row with an identical copy in training can be recognised rather than predicted, and a TFM compares test rows with its context rows directly. Check: recompute PR-AUC without the test rows that have a copy in training.
+3. **Memorisation from pretraining.** Both checkpoints were pretrained only on synthetic tables (TabPFN v2 original, which is why `models.py` pins it; the TabICLv2 paper says the same). Check: shuffle the context labels. A model that learns from its context must fall to chance; a model that memorised ULB wouldn't.
+4. **Chance.** Per-cell TFM vs matched-XGBoost tests: a 95% interval pooled over all 5 seeds' test sets, and Holm's correction because ~32 cells are tested at once.
+
+**Not covered by check 4.** The pooled interval accounts for which test rows were
+drawn, not for which contexts were drawn. That is why the small-k pattern needs a
+separate confirmatory run with fresh contexts, with the hypothesis written down
+first.
+
+---
+
 ## Open questions I am tracking
 
-- Does the few-shot advantage hold across all 5 seeds once matched XGBoost uses the retuned search space?
+- Is the small-k advantage (TFMs ahead of XGBoost on the same rows when the context holds fewer than ~10 frauds) real? Notebook 06 tests it on the existing runs; a confirmatory run on fresh contexts follows.
 - How much of the 0.10 gap at 0.172% does a class-balanced context close?
 - Is the TFM gain from more context rows, or from more frauds in the context? (Planned follow-up: hold the number of frauds fixed and vary their share.)
 - How large is context-only noise compared with split-to-split noise? (Measured in notebook 05, cell 6.)
