@@ -1,0 +1,6 @@
+level,test_rows,test_rows_with_copy_in_train,test_frauds,test_frauds_with_copy_in_train
+20,490.0,4.2,98.0,4.0
+5,1960.0,4.4,98.0,4.0
+1,9800.0,13.2,98.0,4.0
+0.5,19600.0,44.0,98.0,4.0
+natural,56962.0,260.2,98.0,4.0

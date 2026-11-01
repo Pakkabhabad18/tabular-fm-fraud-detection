@@ -4,7 +4,7 @@
 
 Prakash Bhabad · IIIT Hyderabad · 2026
 
-> **Status (25 Oct 2026):** classical arm done (5 seeds); foundation-model sweep in progress (seed 0 done). Proposal: [`docs/proposal.pdf`](docs/proposal.pdf). Step-by-step record: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md). Mid-evaluation: 2–4 Nov 2026. Final submission: 30 Nov 2026.
+> **Status (2 Nov 2026):** XGBoost and uniform-context foundation models done (5 seeds); first context-policy comparison done (TabICLv2); leakage, duplicate, memorisation and significance checks passed. Proposal: [`docs/proposal.pdf`](docs/proposal.pdf). Step-by-step record: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md). Mid-evaluation: 2–4 Nov 2026. Final submission: 30 Nov 2026.
 
 ---
 
@@ -54,19 +54,37 @@ A negative result with a supported explanation, for example that the advantage d
 
 ## Results so far
 
-Full-data XGBoost (plain variant, mean ± std over 5 seeds) against the best foundation model with a uniform context (seed 0 only, preliminary):
+**1. Uniform (random) context, mean ± std over 5 seeds, largest k that fits.**
 
-| Fraud rate | XGBoost PR-AUC | Best TFM PR-AUC (seed 0) | Frauds in a 10K uniform context |
-| --- | --- | --- | --- |
-| 20% | 0.966 ± 0.009 | 0.963 | n/a (pool is 1,475 rows) |
-| 5% | 0.930 ± 0.014 | 0.931 | n/a (k ≤ 5K) |
-| 1% | 0.894 ± 0.016 | 0.855 | 104 |
-| 0.5% | 0.881 ± 0.020 | 0.794 | 49 |
-| 0.172% | 0.865 ± 0.022 | 0.767 | 19 |
+| Fraud rate | k | TabICLv2 | TabPFN v2 | XGBoost, same k rows | XGBoost, all rows |
+| --- | --- | --- | --- | --- | --- |
+| 20% | 1K | 0.970 ± 0.007 | 0.969 ± 0.011 | 0.961 ± 0.016 | 0.966 ± 0.009 |
+| 5% | 5K | 0.944 ± 0.012 | 0.932 ± 0.015 | 0.932 ± 0.009 | 0.930 ± 0.014 |
+| 1% | 10K | 0.870 ± 0.034 | 0.865 ± 0.009 | 0.869 ± 0.023 | 0.894 ± 0.016 |
+| 0.5% | 10K | 0.820 ± 0.046 | 0.831 ± 0.025 | 0.826 ± 0.019 | 0.881 ± 0.020 |
+| 0.172% | 10K | 0.763 ± 0.020 | 0.741 ± 0.023 | 0.780 ± 0.043 | 0.865 ± 0.022 |
+
+- Foundation models tie with full-data XGBoost at 20% and 5% and fall about 0.10 behind at 0.172%.
+- On the same k rows the two families are level at large k. A random 10K context at 0.172% holds only about 16 of the 295 training frauds; that, not the model family, explains the gap.
+- When the context holds only 1-10 frauds, the foundation models are ahead of XGBoost on the same rows in all 10 such cells (+0.01 to +0.06). Significant after Holm correction for TabPFN v2 at 0.172% with k = 1K and 2K. Found after looking at the results, so a confirmatory run on fresh contexts is planned.
+
+**2. Choosing the context (TabICLv2, PR-AUC at 0.172%).**
+
+| Policy | k = 1K | k = 10K |
+| --- | --- | --- |
+| uniform | 0.686 | 0.763 |
+| balanced (all 295 training frauds) | 0.786 | 0.812 |
+| ensemble of 5 balanced contexts (2 seeds so far) | 0.794 | 0.858 |
+| kNN retrieval | 0.311 | 0.697 |
+| full-data XGBoost | | 0.865 |
+
+- Showing the model all the frauds closes most of the gap: a balanced 1K context beats a random 10K one.
+- kNN retrieval contexts fail at this fraud rate; the cause is being checked.
+
+**3. Sanity checks (notebook 06), all passed.** No context ever contains a validation or test row. Removing the 4 test frauds that have an exact duplicate in training lowers every model by 0.002-0.015, foundation models no more than XGBoost. With the context labels shuffled, PR-AUC falls from about 0.76 to 0.07-0.09 at 0.172% and to chance at 1%, so the models use the labels they are shown and are not recalling the dataset.
 
 - ROC-AUC stays near 0.98 at every fraud rate while PR-AUC falls, which is why PR-AUC is the headline metric.
 - `scale_pos_weight` and SMOTE do not beat plain XGBoost with a tuned threshold, and SMOTE gives worse-calibrated probabilities.
-- Below 1%, a uniform context shows the foundation models only a small share of the training frauds. Class-aware contexts (next step) target this gap.
 
 Details, reasons and corrections: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md). Expected evaluation questions: [`docs/EVAL_QA.md`](docs/EVAL_QA.md).
 

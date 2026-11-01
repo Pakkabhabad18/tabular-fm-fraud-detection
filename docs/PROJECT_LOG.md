@@ -422,9 +422,66 @@ rows, the gain is about the rows, not about in-context learning.
 
 ---
 
+## 2 Nov: sanity checks (notebook 06)
+
+Tables: `results/check_duplicates.csv`, `results/check_shuffled_labels.csv`,
+`results/check_tfm_vs_matched_xgb.csv`.
+
+**Check 1, index leakage: passed.** Every saved context (all seeds, fraud rates, k
+and single-context policies) is made of training rows only. 0 rows outside training,
+0 validation rows, 0 test rows.
+
+**Check 2, duplicated transactions: passed.**
+- 4 of the 98 test frauds have an exact copy among the training frauds, in every split (the frauds are the same at every fraud rate). At 0.172%, about 260 of the 56,962 test rows have a copy in training.
+- Removing those test rows lowers PR-AUC by 0.002-0.011 for the foundation models, 0.002-0.007 for full-data XGBoost and 0.002-0.015 for XGBoost on k rows.
+- Every model loses a little, because the 4 removed frauds were easy ones. The foundation models don't lose more than XGBoost, so they are not recognising copies, and no comparison changes order. I'll report the de-duplicated numbers as a robustness row in the final report.
+
+**Check 3, memorisation: passed.** Same context rows as the seed-0 uniform 10K run, labels permuted:
+
+| Fraud rate | Model | Real labels | Shuffled labels | No skill |
+| --- | --- | --- | --- | --- |
+| 0.172% | TabICLv2 | 0.767 | 0.068 | 0.0017 |
+| 0.172% | TabPFN v2 | 0.749 | 0.085 | 0.0017 |
+| 1% | TabICLv2 | 0.815 | 0.019 | 0.010 |
+| 1% | TabPFN v2 | 0.855 | 0.006 | 0.010 |
+
+A model that had memorised ULB would keep scoring well with wrong labels. Both lose
+about 90% of their PR-AUC at 0.172% and fall to chance at 1%. The small score left at
+0.172% (0.07-0.09, above the 0.0017 chance level) is most likely because frauds are
+unusual transactions: a row unlike anything in the context gets a less confident
+"legitimate", which pushes rare outliers up the ranking even without correct labels.
+That is an outlier effect, not memory, and it's worth one sentence in the report.
+
+**Check 4, TFM vs XGBoost on the same k rows (pooled over 5 seeds, Holm-corrected over 32 cells).**
+- Significant after correction (p_holm < 0.05; a reported p of 0 means below 0.001 with 1,000 bootstrap rounds, so p_holm is at most 0.032):
+  - TabPFN v2 at 0.172%, k = 1K: +0.053 [0.020, 0.083]
+  - TabPFN v2 at 0.172%, k = 2K: +0.065 [0.038, 0.096]
+  - TabICLv2 at 20%, k = 1K: +0.009 [0.003, 0.016]
+  - TabICLv2 at 5%, k = 5K: +0.012 [0.006, 0.020]
+- Just above the cut-off (p_holm 0.056): TabICLv2 at 0.172% with k = 2K (+0.048), TabICLv2 at 5% with k = 2K, TabPFN v2 at 20%.
+- No cell where XGBoost is significantly better after correction. The closest is TabPFN v2 at 0.172% with k = 10K (-0.039, raw p 0.008, p_holm 0.2).
+
+**What it means for the small-k pattern.** In all 10 cells where the context holds
+fewer than 10 frauds (0.172% at 1K and 2K, 0.5% at 1K and 2K, 1% at 1K, for both
+models), the foundation model is ahead of XGBoost on the same rows, by +0.006 to
++0.065. 8 of the 10 have raw p < 0.05, and 2 survive Holm. Where the context holds 25+
+frauds the differences scatter around zero, and at 0.172% with 10K rows XGBoost tends
+to be ahead. So the picture is a crossover: in-context learning gets more from a
+handful of frauds, and trees catch up once there is more to learn from.
+
+This is supporting evidence, not proof. The 10 cells share seeds and nested contexts,
+so they aren't independent, and I found the pattern after seeing the results. The
+confirmatory run will use fresh context draws and a hypothesis fixed in advance:
+"With fewer than 10 frauds in the context, TabPFN v2 and TabICLv2 beat XGBoost trained
+on the same rows in PR-AUC."
+
+---
+
 ## Open questions I am tracking
 
-- Is the small-k advantage (TFMs ahead of XGBoost on the same rows when the context holds fewer than ~10 frauds) real? Notebook 06 tests it on the existing runs; a confirmatory run on fresh contexts follows.
+- Does the small-k advantage hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (10 of 10 cells positive, 2 significant after Holm).
+- Why do kNN contexts fail at 0.172%? Check the code, then test per-cluster prior correction.
+- Does the ensemble of balanced contexts hold up with seeds 2-4 (0.858 vs XGBoost 0.865 on 2 seeds)?
 - How much of the 0.10 gap at 0.172% does a class-balanced context close?
 - Is the TFM gain from more context rows, or from more frauds in the context? (Planned follow-up: hold the number of frauds fixed and vary their share.)
 - How large is context-only noise compared with split-to-split noise? (Measured in notebook 05, cell 6.)

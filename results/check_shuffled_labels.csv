@@ -1,0 +1,9 @@
+model,level,k,seed,context_labels,context_frauds,pr_auc,no_skill_pr_auc
+TabICLv2,natural,10000,0,real,19,0.7669,0.0017
+TabICLv2,natural,10000,0,shuffled,19,0.0676,0.0017
+TabPFN v2,natural,10000,0,real,19,0.7489,0.0017
+TabPFN v2,natural,10000,0,shuffled,19,0.0854,0.0017
+TabICLv2,1,10000,0,real,104,0.8152,0.01
+TabICLv2,1,10000,0,shuffled,104,0.0186,0.01
+TabPFN v2,1,10000,0,real,104,0.8549,0.01
+TabPFN v2,1,10000,0,shuffled,104,0.0056,0.01

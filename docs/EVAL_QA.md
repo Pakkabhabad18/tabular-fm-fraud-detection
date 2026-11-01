@@ -191,19 +191,20 @@ after. PR-AUC depends only on the order of the scores.
 
 **Q. What is the main result so far?**
 Full-data XGBoost: 0.966 at 20% down to 0.865 ± 0.022 at 0.172%. TFMs with a uniform
-context keep up at 20% and 5% (best 0.963 and 0.931) but fall about 0.10 behind at
-0.172% (best 0.767) *(seed 0)*.
+context keep up at 20% and 5% (0.970 and 0.944) but fall about 0.10 behind at 0.172%
+(0.763 ± 0.020 for TabICLv2), all over 5 seeds. A balanced context cuts that gap to 0.05.
 
 **Q. Why do the TFMs fall behind below 1%?**
-A 10K uniform context at 0.172% contains only 19 of the 295 training frauds
-*(seed 0)*. The model is shown very little of the class it has to find. This is the
-problem class-aware contexts (W1) are designed to fix.
+A 10K uniform context at 0.172% contains only about 16 of the 295 training frauds
+(mean over 5 seeds). The model is shown very little of the class it has to find. On
+the same rows XGBoost does no better, and a balanced context with all the frauds
+recovers half the gap, so the problem is the context, not the model.
 
 **Q. What is the most surprising observation?**
-With a single fraud among 1,000 context rows, TabICLv2 reached PR-AUC 0.63
-*(seed 0)*. Comparing a new row against the one fraud it has seen is enough for a
-useful ranking. Whether XGBoost can match this with a properly tuned
-`min_child_weight` is being tested in the current runs.
+Two things. First, with only about 1 fraud among 1,000 context rows, both TFMs reach
+PR-AUC near 0.69 at 0.172% (chance is 0.0017), ahead of XGBoost on the same rows
+(0.645). Second, kNN retrieval, which recent papers recommend for large tables, does
+much worse than a random context here.
 
 **Q. Which TFM is better?**
 So far they are close in PR-AUC, with no consistent winner across fraud rates.
@@ -220,20 +221,48 @@ measured across dataset sizes (W4).
 ---
 
 **Q. The TFMs score well. Are they overfitting or memorising the data?**
-They can't overfit in the usual sense: the weights are frozen and never see our
-training rows as training data. But a score can still be inflated, so I check four
-things in notebook 06:
-1. No validation or test row is ever in a context (all saved contexts are checked).
-2. ULB has 1,081 duplicated transactions. I recompute PR-AUC without test rows that have an exact copy in training.
-3. Both checkpoints were pretrained only on synthetic tables. To test memorisation directly, I shuffle the context labels: a model that learns from its context falls to chance.
-4. The TFM vs XGBoost differences are tested with a paired bootstrap pooled over the 5 seeds, with Holm's correction for testing many cells.
+They can't overfit in the usual sense: the weights are frozen and never trained on
+our rows. I checked the other ways a score could be inflated (notebook 06):
+1. **Leakage:** no context ever contains a validation or test row (every saved context checked).
+2. **Duplicates:** 4 of the 98 test frauds have an exact copy in training. Removing them lowers every model by 0.002-0.015, the TFMs no more than XGBoost, so they aren't recognising copies.
+3. **Memorisation:** with the context labels shuffled, PR-AUC drops from 0.77 to 0.07 at 0.172% and to chance at 1%. A model that remembered ULB would still score well.
+4. **Chance:** paired bootstrap pooled over 5 seeds, with Holm's correction over 32 cells.
+
+**Q. Why isn't the shuffled-label score exactly chance at 0.172%?**
+It's 0.07-0.09 against a chance level of 0.0017. Frauds are unusual transactions, and
+a row unlike anything in the context gets a less confident "legitimate", so outliers
+drift up the ranking even with wrong labels. That's an outlier effect. It's still
+about 90% below the real-label score, which memorisation wouldn't give.
 
 **Q. Do the TFMs really beat XGBoost when frauds are scarce?**
-Not full-data XGBoost: it is about 0.10 ahead at 0.172%. Against XGBoost trained on
-the same rows, the TFMs are ahead by 0.02-0.06 whenever the context holds fewer than
-~10 frauds, in every such cell. I noticed this after seeing the results, so I treat it
-as a hypothesis: it is tested on the existing runs in notebook 06 and then confirmed
-on fresh contexts that I haven't looked at.
+Not full-data XGBoost: it's 0.10 ahead at 0.172% with a random context, and 0.05 ahead
+with a balanced one. Against XGBoost trained on the same rows: when the context holds
+fewer than 10 frauds, the TFM is ahead in all 10 such cells (+0.006 to +0.065), 8 with
+p < 0.05, and 2 (TabPFN v2 at 0.172% with 1K and 2K rows) still significant after Holm
+correction. With more frauds the two are level. I spotted this after seeing the
+results, so it's supporting evidence; the confirmatory test on fresh contexts comes next.
+
+**Q. What is Holm's correction and why use it?**
+I test 32 cells. At p < 0.05, about 1-2 would look significant by luck alone. Holm
+sorts the p-values and multiplies the smallest by 32, the next by 31, and so on, so
+the chance of even one false positive across all 32 stays at 5%.
+
+**Q. Which context policy works best?**
+Balanced: all 295 training frauds plus legitimate rows. At 0.172% it beats uniform on
+5 of 5 seeds at k = 1K (0.786 vs 0.686), and a balanced 1K context beats a random 10K
+one. An ensemble of 5 balanced contexts reaches 0.858 at 10K, against 0.865 for
+full-data XGBoost (2 seeds so far). kNN retrieval fails at this fraud rate.
+
+**Q. Why does kNN fail?**
+Still being checked. My best explanation: each cluster of test rows gets its own
+context, so scores from different clusters aren't on one scale, but PR-AUC ranks all
+test rows together. And with all frauds plus only the nearest legitimate rows, a normal
+transaction far from the cluster centre looks unlike any legitimate row it was shown.
+
+**Q. How noisy is a random context?**
+On one fixed split, 5 random 1K contexts at 0.172% scored from chance (a draw with no
+fraud) to about 0.7. At 10K the context-only std (0.040) is twice the std across splits
+(0.020). That's the case for choosing the context deliberately.
 
 ---
 
