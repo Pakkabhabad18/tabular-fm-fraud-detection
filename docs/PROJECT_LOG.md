@@ -391,6 +391,37 @@ also picks the fraud column by class label instead of by position. Two tests add
 
 ---
 
+## 2 Nov: first context-policy results (W1, TabICLv2)
+
+**What.** Notebook 05. Uniform, stratified and balanced have 5 seeds; kNN and the
+ensembles have 2-3 seeds so far (the first session stopped partway). Tables:
+`results/w1_policy_table_tabiclv2_partial.csv`, `results/w1_context_variance_seed0.csv`.
+
+**PR-AUC at 0.172% fraud (mean over seeds).**
+
+| Policy | k = 1K | k = 10K | Seeds better than uniform |
+| --- | --- | --- | --- |
+| uniform (baseline) | 0.686 | 0.763 | - |
+| stratified | 0.625 | 0.757 | 2/5, 3/5 |
+| balanced | 0.786 | 0.812 | 5/5, 4/5 |
+| ensemble of 5 balanced | 0.794 | 0.858 | 2/2, 2/2 |
+| kNN | 0.311 | 0.697 | 0/3, 0/2 |
+| kNN + all frauds | 0.106 | 0.476 | 0/2, 0/2 |
+| full-data XGBoost | | 0.865 | |
+
+**What it means.**
+- **Showing the model all the frauds is what helps.** A balanced 1K context (all 295 training frauds + 705 legitimate rows) beats a random 10K context (about 16 frauds): 0.786 vs 0.763. The number of frauds matters more than the size of the context.
+- **The gap to full-data XGBoost shrinks** from 0.10 (uniform) to 0.05 (balanced, 5 seeds) and to 0.007 (ensemble of 5 balanced contexts, 2 seeds only). At 1% the ensemble ties with XGBoost (0.894 vs 0.894). The ensemble result needs seeds 2-4 before I rely on it.
+- **Stratified is no better than uniform.** It only removes the luck of the draw, not the shortage of frauds, as expected for a control.
+- **kNN contexts fail badly**, and adding all the frauds makes them worse. My best explanation: (1) each cluster of test rows gets its own context, so scores from different clusters aren't on the same scale, but PR-AUC ranks all test rows together; (2) with all frauds plus only the legitimate rows nearest the cluster centre, legitimate test rows far from that centre look unlike any legitimate row in the context and get flagged. I need to check the code before calling this a finding.
+- **A random context is a lottery at small k.** On one fixed split, 5 random 1K contexts at 0.172% gave PR-AUC from chance (no fraud in the draw) to about 0.7: std 0.33. At 10K the context-only std (0.040) is twice the split-to-split std (0.020). Most of the run-to-run noise comes from which rows land in the context.
+
+**Still to check.** XGBoost on the same balanced rows (random undersampling) is
+already saved; notebook 04 compares it. If XGBoost gains just as much from the same
+rows, the gain is about the rows, not about in-context learning.
+
+---
+
 ## Open questions I am tracking
 
 - Is the small-k advantage (TFMs ahead of XGBoost on the same rows when the context holds fewer than ~10 frauds) real? Notebook 06 tests it on the existing runs; a confirmatory run on fresh contexts follows.
