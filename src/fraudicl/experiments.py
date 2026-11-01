@@ -444,9 +444,17 @@ def run_context_variance(X, y, split, out_dir, make, model_name, k, context_seed
             continue
         # context seed 1000 + cs keeps these draws apart from the seed-0..4 contexts
         ctx = np.sort(np.random.default_rng(1000 + cs).permutation(split.train)[:k])
-        model = make(split.seed)
-        model.fit(X[ctx], y[ctx])
-        s = predict_in_batches(model, X[split.test])
+        if y[ctx].sum() == 0:
+            # A random draw can contain no fraud at all (at 0.172% with k = 1K this
+            # happens about 1 time in 6). Same rule as run_tfm_sweep: the model has
+            # nothing to compare against, so every row gets the same score and
+            # PR-AUC equals the fraud rate. That draw is part of the context noise
+            # we are measuring, so it is kept, not skipped.
+            s = np.zeros(len(split.test))
+        else:
+            model = make(split.seed)
+            model.fit(X[ctx], y[ctx])
+            s = predict_in_batches(model, X[split.test])
         row = {"model": model_name, "level": split.level, "k": k, "split_seed": split.seed,
                "context_seed": cs, "context_frauds": int(y[ctx].sum()), "pr_auc": pr_auc(y[split.test], s)}
         json.dump(row, open(path, "w"), indent=2)

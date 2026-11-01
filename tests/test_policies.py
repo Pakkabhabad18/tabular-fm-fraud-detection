@@ -149,3 +149,27 @@ def test_context_variance_fixed_split(fake, tmp_path):
     assert a.context_frauds.nunique() > 1     # different draws, different contexts
     b = run_context_variance(X, y, s, tmp_path, make, "TabICLv2", 2_000, context_seeds=range(4))
     assert np.allclose(a.pr_auc, b.pr_auc)    # rerun reads the saved results
+
+
+def test_context_variance_survives_a_draw_with_no_fraud(fake, tmp_path):
+    # k = 20 rows at 0.5% fraud: most random draws hold no fraud at all. This used to
+    # crash (predict_proba returns one column); now such a draw scores the fraud rate.
+    X, y, splits = fake
+    s = _pool(splits)
+    make = lambda seed: LogisticRegression(max_iter=300)
+    r = run_context_variance(X, y, s, tmp_path, make, "TabICLv2", 20, context_seeds=range(6))
+    empty = r[r.context_frauds == 0]
+    assert len(empty) > 0
+    assert np.allclose(empty.pr_auc, y[s.test].mean())
+
+
+def test_predict_in_batches_with_one_class_model():
+    from fraudicl.tfm import predict_in_batches
+    X = np.random.default_rng(0).normal(size=(50, 3))
+
+    class OneClass:            # what a model fitted on legitimate rows only looks like
+        classes_ = np.array([0])
+        def predict_proba(self, X):
+            return np.ones((len(X), 1))
+
+    assert np.array_equal(predict_in_batches(OneClass(), X), np.zeros(50))

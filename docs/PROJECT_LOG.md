@@ -376,6 +376,21 @@ first.
 
 ---
 
+## 2 Nov: crash in the context-variance test
+
+**What happened.** Notebook 05 cell 6 stopped with `IndexError: index 1 is out of
+bounds`. It redraws a random 1K context five times at 0.172%, and one draw held no
+fraud at all (expected about 1 time in 6 with ~1.2 frauds on average). Fitted on
+legitimate rows only, the model returns one probability column, and the code asked
+for column 1.
+
+**Fix.** Same rule as the main sweep: a context with no fraud gives every row the
+same score, so PR-AUC equals the fraud rate. That draw stays in the results, because
+it is exactly the kind of context noise this test measures. `predict_in_batches` now
+also picks the fraud column by class label instead of by position. Two tests added.
+
+---
+
 ## Open questions I am tracking
 
 - Is the small-k advantage (TFMs ahead of XGBoost on the same rows when the context holds fewer than ~10 frauds) real? Notebook 06 tests it on the existing runs; a confirmatory run on fresh contexts follows.

@@ -180,5 +180,12 @@ def predict_in_batches(model, X: np.ndarray, batch: int = 10_000) -> np.ndarray:
     Prediction memory grows with (context rows x rows predicted at once), so
     chunking keeps a 57K-row validation or test set within the T4's 15 GB.
     """
-    out = [model.predict_proba(X[i:i + batch])[:, 1] for i in range(0, len(X), batch)]
+    # Take the column of class 1 by name, not by position: a model fitted on a
+    # context with only legitimate rows returns a single column, and [:, 1] would
+    # crash. Such a model can only say "not fraud", so it scores 0 for every row.
+    classes = list(getattr(model, "classes_", [0, 1]))
+    if 1 not in classes:
+        return np.zeros(len(X))
+    col = classes.index(1)
+    out = [model.predict_proba(X[i:i + batch])[:, col] for i in range(0, len(X), batch)]
     return np.concatenate(out)
