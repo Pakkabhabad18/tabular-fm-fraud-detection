@@ -79,9 +79,14 @@ A negative result with a supported explanation, for example that the advantage d
 | full-data XGBoost | | 0.865 |
 
 - Showing the model all the frauds closes most of the gap: a balanced 1K context beats a random 10K one.
+- XGBoost trained on the same balanced rows (random undersampling) gains almost as much, so the improvement comes from the rows shown, not from in-context learning as such.
 - kNN retrieval contexts fail at this fraud rate; the cause is being checked.
 
-**3. Sanity checks (notebook 06), all passed.** No context ever contains a validation or test row. Removing the 4 test frauds that have an exact duplicate in training lowers every model by 0.002-0.015, foundation models no more than XGBoost. With the context labels shuffled, PR-AUC falls from about 0.76 to 0.07-0.09 at 0.172% and to chance at 1%, so the models use the labels they are shown and are not recalling the dataset.
+**3. Probabilities and thresholds (research question 3).** A balanced context makes the probabilities about 20 times too high at 0.172%; Bayes prior correction brings them back (ECE 0.038 → 0.0004 at k = 1K) without changing the ranking. The τ = π₁ threshold rule, tested elsewhere down to 5%, does not carry over: at 0.172% it catches about 90% of frauds but 8-9 of every 10 alerts are false.
+
+Figures: [`results/figures/`](results/figures/) (fig 1 headline, fig 2 PR-AUC by k, fig 3 score against frauds seen, fig 4 context policies, fig 5 reliability).
+
+**4. Sanity checks (notebook 06), all passed.** No context ever contains a validation or test row. Removing the 4 test frauds that have an exact duplicate in training lowers every model by 0.002-0.015, foundation models no more than XGBoost. With the context labels shuffled, PR-AUC falls from about 0.76 to 0.07-0.09 at 0.172% and to chance at 1%, so the models use the labels they are shown and are not recalling the dataset.
 
 - ROC-AUC stays near 0.98 at every fraud rate while PR-AUC falls, which is why PR-AUC is the headline metric.
 - `scale_pos_weight` and SMOTE do not beat plain XGBoost with a tuned threshold, and SMOTE gives worse-calibrated probabilities.

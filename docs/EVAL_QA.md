@@ -253,6 +253,20 @@ Balanced: all 295 training frauds plus legitimate rows. At 0.172% it beats unifo
 one. An ensemble of 5 balanced contexts reaches 0.858 at 10K, against 0.865 for
 full-data XGBoost (2 seeds so far). kNN retrieval fails at this fraud rate.
 
+**Q. Isn't the balanced context just undersampling? Does XGBoost gain the same?**
+Yes, it's the same idea, and I tested it: XGBoost trained on exactly the same balanced
+rows gains almost as much (0.835 vs 0.830 for TabICLv2 at 10K, seeds 0-1). So the
+lesson is "show the model every fraud", for both families. The TFM keeps a small edge
+at 1K-5K rows, within noise on 2 seeds.
+
+**Q. What did you find on calibration and thresholds (RQ3)?**
+A balanced context at 0.172% is 3-30% fraud, so the model thinks fraud is that common:
+mean predicted probability 0.040 against a real rate of 0.0017 at k = 1K. Prior
+correction fixes it (ECE 0.038 → 0.0004) and leaves PR-AUC unchanged. The τ = π₁ rule
+fails at 0.172%: it flags 600-1,800 transactions to catch about 90 of 98 frauds, so 8-9
+of every 10 alerts are false. With corrected probabilities, plain τ = 0.5 works about
+as well as the tuned threshold.
+
 **Q. Why does kNN fail?**
 Still being checked. My best explanation: each cluster of test rows gets its own
 context, so scores from different clusters aren't on one scale, but PR-AUC ranks all
@@ -288,6 +302,5 @@ Both are in `docs/PROJECT_LOG.md`, with the old results kept as `results/archive
 **Q. What will you show at the final evaluation that isn't here yet?**
 - All 5 seeds for the TFMs.
 - The W1 context-policy comparison (stratified, class-balanced, kNN, hard negatives, PCA, clustering, ensembles of disjoint contexts) with effect sizes.
-- W2: calibration and the τ = π₁ threshold at 0.172%.
 - W4: dataset size and context size against both score and latency.
 - The IEEE-CIS realism check.

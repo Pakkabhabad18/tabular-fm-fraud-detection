@@ -416,9 +416,8 @@ ensembles have 2-3 seeds so far (the first session stopped partway). Tables:
 - **kNN contexts fail badly**, and adding all the frauds makes them worse. My best explanation: (1) each cluster of test rows gets its own context, so scores from different clusters aren't on the same scale, but PR-AUC ranks all test rows together; (2) with all frauds plus only the legitimate rows nearest the cluster centre, legitimate test rows far from that centre look unlike any legitimate row in the context and get flagged. I need to check the code before calling this a finding.
 - **A random context is a lottery at small k.** On one fixed split, 5 random 1K contexts at 0.172% gave PR-AUC from chance (no fraud in the draw) to about 0.7: std 0.33. At 10K the context-only std (0.040) is twice the split-to-split std (0.020). Most of the run-to-run noise comes from which rows land in the context.
 
-**Still to check.** XGBoost on the same balanced rows (random undersampling) is
-already saved; notebook 04 compares it. If XGBoost gains just as much from the same
-rows, the gain is about the rows, not about in-context learning.
+**Checked (see the notebook 04 entry below).** XGBoost trained on the same balanced
+rows gains almost as much, so the gain comes from the rows themselves.
 
 ---
 
@@ -477,6 +476,61 @@ on the same rows in PR-AUC."
 
 ---
 
+## 2 Nov: results export (notebook 04): figures, calibration, thresholds
+
+**What.** Notebook 04 read every saved run and wrote `results_export.zip`, unzipped
+into `results/` (tables) and `results/figures/` (figures 1-5).
+
+**Figures.**
+- Fig 1 `fig1_headline.png`: PR-AUC against fraud rate. All lines together at 20% and 5%; full-data XGBoost pulls away below 1%.
+- Fig 2 `fig2_by_k.png`: PR-AUC against k per fraud rate. Bigger random contexts help, but at 0.172% even 10K stays well below full-data XGBoost.
+- Fig 3 `fig3_context_frauds.png`: every 0.172% run against the number of frauds in its context. Scores rise with frauds seen, whatever the model.
+- Fig 4 `fig4_policies.png`: the context policies. Balanced and the balanced ensemble sit near the XGBoost line; kNN far below.
+- Fig 5 `fig5_reliability.png`: calibration at 0.172%. The balanced context's raw probabilities sit far to the right of the diagonal (too high); after prior correction they lie on it.
+
+**Does XGBoost gain just as much from the balanced rows?** Yes, mostly. Training
+XGBoost on the same balanced rows is random undersampling. Seeds 0-1 (the matched
+balanced runs have 2 seeds), PR-AUC at 0.172%:
+
+| k | TabICLv2, balanced | XGBoost, same balanced rows | TabICLv2, uniform | XGBoost, same uniform rows |
+| --- | --- | --- | --- | --- |
+| 1K | 0.785 | 0.769 | 0.667 | 0.669 |
+| 2K | 0.776 | 0.774 | 0.696 | 0.661 |
+| 5K | 0.817 | 0.807 | 0.724 | 0.763 |
+| 10K | 0.830 | 0.835 | 0.768 | 0.809 |
+
+So the gain from the balanced policy is about which rows are shown, not something
+special to in-context learning. Both families gain about 0.07-0.11 at small k. The
+TFM stays a little ahead at 1K-5K (+0.002 to +0.016) and level at 10K. That changes
+how I describe W1: the finding is "show the model every fraud", which applies to both
+families. It isn't "foundation models need clever contexts and trees don't". With
+only 2 seeds these differences are within noise.
+
+**Calibration (W2).**
+- Uniform and stratified contexts are already close to calibrated (mean prediction ≈ real fraud rate; ECE 0.0002-0.002 at 0.172%), like full-data XGBoost (ECE 0.0002).
+- Balanced contexts over-predict exactly as Bayes says they should. At 0.172% with k = 1K the context is 29.5% fraud: mean prediction 0.040 against a real rate of 0.0017, ECE 0.038. Prior correction brings the mean to 0.0018 and ECE to 0.0004. At 10K: 0.0049 → 0.0018, ECE 0.0031 → 0.0002.
+- The same correction works for XGBoost trained on balanced rows (ECE 0.075 → 0.0015 at 1K).
+- Conclusion: a balanced context improves the ranking but breaks the probabilities, and a one-line Bayes correction repairs them without changing the ranking.
+
+**Thresholds at 0.172% (prior-corrected probabilities, mean over seeds, 98 test frauds, 56,962 test rows).**
+
+| Rule | Full-data XGBoost | TabICLv2 balanced 10K | TabICLv2 uniform 10K |
+| --- | --- | --- | --- |
+| τ = 0.5 | 84 alerts, 78 frauds, F1 0.86 | 92 alerts, 80 frauds, F1 0.84 | 93 alerts, 78 frauds, F1 0.81 |
+| τ = F1-best on validation | 89 alerts, 81 frauds, F1 0.86 | 91 alerts, 80 frauds, F1 0.84 | 92 alerts, 79 frauds, F1 0.83 |
+| τ = π₁ = 0.0017 | 1,046 alerts, 89 frauds, F1 0.17 | 845 alerts, 90 frauds, F1 0.20 | 618 alerts, 86 frauds, F1 0.27 |
+| top 0.1% budget (57 alerts) | 56.6 real frauds | 52.6 | 49.8 |
+
+**RQ3 answered.** The τ = π₁ rule doesn't carry over to 0.172%. It catches about 90%
+of frauds, but 8-9 of every 10 alerts are false for every model. McDowell et al.
+tested it down to 5%, where flagging above the base rate costs far fewer false
+alarms. Once probabilities are calibrated (prior-corrected), plain τ = 0.5 is about
+as good as the F1-tuned threshold. On a fixed alert budget, full-data XGBoost is
+still the most precise (56.6 of 57 alerts real); the balanced TFM ensemble gets 56
+of 57 on its 2 seeds.
+
+---
+
 ## Open questions I am tracking
 
 - Does the small-k advantage hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (10 of 10 cells positive, 2 significant after Holm).
@@ -485,4 +539,3 @@ on the same rows in PR-AUC."
 - How much of the 0.10 gap at 0.172% does a class-balanced context close?
 - Is the TFM gain from more context rows, or from more frauds in the context? (Planned follow-up: hold the number of frauds fixed and vary their share.)
 - How large is context-only noise compared with split-to-split noise? (Measured in notebook 05, cell 6.)
-- Do TFM probabilities stay calibrated at 0.172%, and does τ = π₁ still work as a threshold (RQ3)? (Code ready: notebook 04, cells 6c-6e.)
