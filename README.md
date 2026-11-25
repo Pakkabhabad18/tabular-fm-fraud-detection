@@ -131,7 +131,7 @@ Figures: [`results/figures/`](results/figures/) (fig 1 headline, fig 2 PR-AUC by
 | TabPFN v2 and TabICLv2 inference, context budgets 1K-10K | core | done |
 | Matched-budget XGBoost (same k rows) | core | done |
 | W1: uniform, stratified, balanced, kNN, ensembles of disjoint contexts | core | done for TabICLv2 (kNN and ensembles on 2-3 seeds) |
-| W1: hard-negative, PCA-based, clustering-based contexts | core / stretch | after mid-eval |
+| W1: hard-negative, PCA-based, clustering-based contexts | core / stretch | code done (26 Nov), runs in notebook 09 |
 | PR-AUC vs fraud-rate curve (success criterion ii) | core | done (fig 1) |
 | Ranked policy comparison with effect sizes (success criterion iii) | core | done (fig 4, `results/policy_table_tabiclv2.csv`) |
 | W2: ECE, reliability, τ = π₁ vs F1-best vs alert budget | extended | done |
@@ -163,7 +163,8 @@ tests/         unit tests (python -m pytest tests -q)
 notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models (uniform context),
                04 results, 05 context policies (W1), 06 sanity checks,
                07 test-mix control (why PR-AUC falls as fraud gets rarer),
-               08 confirmatory small-context run and seeds 2-4 for the W1 policies
+               08 confirmatory small-context run and seeds 2-4 for the W1 policies,
+               09 cluster, PCA and hard-negative contexts, and why kNN contexts fail
 results/       summary tables (see results/README.md) and figures/ (figures 1-5);
                raw per-run outputs stay on Google Drive; archive_* files are
                superseded runs kept for the record

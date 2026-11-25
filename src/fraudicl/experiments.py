@@ -129,9 +129,10 @@ def _context_path(out_dir, policy, level, k, seed):
     return os.path.join(folder, f"{policy}__{level}__k{k}__seed{seed}.npy")
 
 
-def get_context(out_dir, split, y, k, policy, seed):
+def get_context(out_dir, split, y, k, policy, seed, X=None):
     """Build the context once and save its row indices, so every model that uses
-    this (policy, fraud rate, k, seed) sees exactly the same rows."""
+    this (policy, fraud rate, k, seed) sees exactly the same rows. X is only needed
+    by the policies that look at the features (cluster, pca, hard_negative)."""
     from .tfm import build_context
 
     path = _context_path(out_dir, policy, split.level, k, seed)
@@ -139,11 +140,11 @@ def get_context(out_dir, split, y, k, policy, seed):
         saved = np.load(path)
         # Guard against a stale file from an older version of the context code:
         # the rows on Drive must be the rows the current code would pick.
-        if not np.array_equal(saved, build_context(split.train, y, k, policy, seed)):
+        if not np.array_equal(saved, build_context(split.train, y, k, policy, seed, X)):
             raise RuntimeError(f"{path} was built by older context code; run "
                                "archive_old_uniform_runs() first")
         return saved
-    ctx = build_context(split.train, y, k, policy, seed)
+    ctx = build_context(split.train, y, k, policy, seed, X)
     np.save(path, ctx)
     return ctx
 
@@ -169,7 +170,7 @@ def run_tfm_sweep(X, y, splits, out_dir, model_makers: dict, levels, budgets, se
                     name = f"{tag}_{policy}__{level}__k{k}__seed{seed}"
                     if _done(out_dir, "tfm", name):
                         continue
-                    ctx = get_context(out_dir, s, y, k, policy, seed)
+                    ctx = get_context(out_dir, s, y, k, policy, seed, X)
                     n_ctx_fraud = int(y[ctx].sum())
                     _gpu_peak_reset()
                     t0 = time.perf_counter()
@@ -228,7 +229,7 @@ def run_matched_xgb(X, y, splits, out_dir, levels, budgets, seeds, policy="unifo
                 best = json.load(open(pfile))
             else:
                 s0 = by_key[tune_seed, level]
-                ctx0 = get_context(out_dir, s0, y, k, policy, tune_seed)
+                ctx0 = get_context(out_dir, s0, y, k, policy, tune_seed, X)
                 if y[ctx0].sum() == 0:
                     best = {"params": {}, "note": "no fraud in seed-0 context"}
                 else:
@@ -241,7 +242,7 @@ def run_matched_xgb(X, y, splits, out_dir, levels, budgets, seeds, policy="unifo
                 if _done(out_dir, "xgb_matched", name):
                     continue
                 s = by_key[seed, level]
-                ctx = get_context(out_dir, s, y, k, policy, seed)
+                ctx = get_context(out_dir, s, y, k, policy, seed, X)
                 n_ctx_fraud = int(y[ctx].sum())
                 t0 = time.perf_counter()
                 if n_ctx_fraud == 0:

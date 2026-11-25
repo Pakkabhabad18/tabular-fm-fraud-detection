@@ -401,10 +401,14 @@ def plot_vs_context_frauds(runs: pd.DataFrame, path: str, level: str = "natural"
 
 # ---------------------------------------------------------------- W1: context policies (T8)
 
-POLICY_ORDER = ["uniform", "stratified", "balanced", "knn", "knn_balanced",
-                "ensemble_uniform", "ensemble_balanced"]
+POLICY_ORDER = ["uniform", "stratified", "balanced", "cluster", "pca", "hard_negative",
+                "knn", "knn_balanced", "ensemble_uniform", "ensemble_balanced"]
 POLICY_LABEL = {"uniform": "Uniform (random k rows)", "stratified": "Stratified (fraud rate kept)",
-                "balanced": "Balanced (all frauds, up to k/2)", "knn": "kNN (nearest k rows)",
+                "balanced": "Balanced (all frauds, up to k/2)",
+                "cluster": "All frauds + legit spread over clusters",
+                "pca": "All frauds + legit spread over fraud PCs",
+                "hard_negative": "All frauds + half hard negatives",
+                "knn": "kNN (nearest k rows)",
                 "knn_balanced": "kNN + all frauds", "ensemble_uniform": "Ensemble of 5 uniform",
                 "ensemble_balanced": "Ensemble of 5 balanced"}
 
@@ -446,8 +450,9 @@ def plot_policies(table: pd.DataFrame, xgb_runs: pd.DataFrame, path: str, levels
     """
     import matplotlib.pyplot as plt
 
-    colors = ["#52514e", "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"]
-    markers = ["o", "s", "^", "v", "D", "P", "X"]
+    colors = ["#52514e", "#2a78d6", "#eb6834", "#0f8a8a", "#9a6b2f", "#c2185b",
+              "#1baf7a", "#eda100", "#e87ba4", "#6250d6"]
+    markers = ["o", "s", "^", "<", ">", "*", "v", "D", "P", "X"]
     fig, axes = plt.subplots(1, len(levels), figsize=(5.2 * len(levels), 3.9), dpi=150, sharey=True)
     axes = np.atleast_1d(axes)
     for ax, level in zip(axes, levels):

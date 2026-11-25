@@ -301,3 +301,63 @@ def confirmatory_verdict(table: pd.DataFrame) -> dict:
             "mean_diff_natural": float(natural), "mean_diff_other_rates": float(others),
             "part2_largest_at_natural": bool(natural > others),
             "cells_holm_significant": int((t.p_holm < 0.05).sum()) if "p_holm" in t else None}
+
+
+# ---------------------------------------------------------------- 5. why kNN contexts fail
+
+def knn_diagnosis(out_dir, X, y, split, policy, k, model="TabICLv2") -> dict:
+    """Look inside one saved kNN run to see why its PR-AUC is low.
+
+    A kNN run gives every group of similar test rows its own context, so the scores
+    of different groups come from different contexts. Two things can go wrong, and
+    this measures both:
+      1. Groups whose context holds no fraud. Every row in them gets score 0, frauds
+         included (`share_test_rows_no_fraud_context`, `share_frauds_scored_zero`).
+      2. Scores on different scales. Each context makes its own probabilities, so a
+         legitimate row in one group can outscore a fraud in another even if each
+         group is ranked well on its own. Then ROC-AUC inside groups stays high
+         while the pooled PR-AUC collapses. `mean_within_group_roc_auc` is the
+         average ranking quality inside groups that have both classes;
+         `legit_p99_ratio` is how far apart the groups' 99th-percentile legitimate
+         scores are (max / min, over groups with a non-zero value); and
+         `top_100_groups` is how many groups the 100 highest-scored rows come from.
+    The groups are rebuilt with the same function and seed as the run, so they are
+    exactly the groups the run used.
+    """
+    from sklearn.metrics import roc_auc_score
+    from .tfm import knn_groups
+
+    tag = model.lower().replace(" ", "")
+    name = f"{tag}_{policy}__{split.level}__k{k}__seed{split.seed}"
+    got = _test_scores(out_dir, "tfm", name)
+    if got is None:
+        return {}
+    test_idx, s = got
+    yt = y[test_idx]
+    group = np.full(len(test_idx), -1)
+    ctx_frauds = []
+    for g, (mask, ctx) in enumerate(knn_groups(split.train, X, y, X[split.test], k, policy, split.seed)):
+        group[mask] = g
+        ctx_frauds.append(int(y[ctx].sum()))
+    ctx_frauds = np.asarray(ctx_frauds)
+    no_fraud = ctx_frauds[group] == 0
+    rocs, weights, p99 = [], [], []
+    for g in np.unique(group):
+        m = group == g
+        if 0 < yt[m].sum() < m.sum():
+            rocs.append(roc_auc_score(yt[m], s[m]))
+            weights.append(int(yt[m].sum()))
+        legit = s[m & (yt == 0)]
+        if len(legit) and np.quantile(legit, 0.99) > 0:
+            p99.append(np.quantile(legit, 0.99))
+    top = np.argsort(-s, kind="stable")[:100]
+    return {
+        "policy": policy, "level": split.level, "k": k, "seed": split.seed,
+        "n_groups": int(len(ctx_frauds)), "groups_without_fraud": int((ctx_frauds == 0).sum()),
+        "share_test_rows_no_fraud_context": float(no_fraud.mean()),
+        "share_frauds_scored_zero": float((no_fraud & (yt == 1)).sum() / yt.sum()),
+        "pooled_pr_auc": pr_auc(yt, s), "pooled_roc_auc": float(roc_auc_score(yt, s)),
+        "mean_within_group_roc_auc": float(np.average(rocs, weights=weights)) if rocs else np.nan,
+        "legit_p99_ratio": float(max(p99) / min(p99)) if len(p99) > 1 else np.nan,
+        "top_100_groups": int(len(np.unique(group[top]))),
+    }

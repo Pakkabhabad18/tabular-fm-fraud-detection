@@ -195,3 +195,55 @@ def test_policy_table_ignores_confirmatory_runs():
                          "context_frauds": [1, 2]})
     t = R.policy_table(runs, "TabICLv2", levels=("natural",))
     assert list(t.policy.astype(str)) == ["uniform"]
+
+
+@pytest.mark.parametrize("policy", ["cluster", "pca", "hard_negative"])
+def test_selected_policies_keep_balanced_frauds_and_nest(fake, policy):
+    # same frauds as the balanced policy, only the legitimate rows differ;
+    # nested across k, reproducible, and only training rows
+    X, y, splits = fake
+    s = _pool(splits)
+    bal = build_context(s.train, y, 1_000, "balanced", 0)
+    a1 = build_context(s.train, y, 1_000, policy, 0, X)
+    a2 = build_context(s.train, y, 2_000, policy, 0, X)
+    assert len(a1) == 1_000 and len(a2) == 2_000 and len(np.unique(a2)) == 2_000
+    assert set(a1) <= set(a2) and set(a2) <= set(s.train)
+    assert np.array_equal(a1[y[a1] == 1], bal[y[bal] == 1])
+    assert np.array_equal(a1, build_context(s.train, y, 1_000, policy, 0, X))
+    with pytest.raises(ValueError):
+        build_context(s.train, y, 1_000, policy, 0)          # X is required
+
+
+def test_hard_negative_puts_the_closest_legit_rows_first(fake):
+    from fraudicl.tfm import _legit_order, _standardise, _class_orders
+    X, y, splits = fake
+    s = _pool(splits)
+    pos, neg = _class_orders(s.train, y, 0)
+    order = _legit_order("hard_negative", X, pos, neg, 0)
+    pool = np.concatenate([pos, neg])
+    P, N = _standardise(X, pos, pool), _standardise(X, neg, pool)
+    d = np.sqrt(((N[:, None, :] - P[None, :, :]) ** 2).sum(-1)).min(1)   # distance to nearest fraud
+    assert order[0] == neg[np.argmin(d)]
+    # the hard half (even positions) is on average much closer to fraud than a random row
+    pos_in_neg = {r: i for i, r in enumerate(neg)}
+    hard_d = np.mean([d[pos_in_neg[r]] for r in order[0:200:2]])
+    assert hard_d < 0.5 * d.mean()
+
+
+def test_cluster_and_pca_spread_over_groups(fake):
+    from fraudicl.tfm import N_CLUSTERS, _class_orders, _legit_order
+    X, y, splits = fake
+    s = _pool(splits)
+    pos, neg = _class_orders(s.train, y, 0)
+    # the first 50 rows of the cluster order come from 50 different clusters,
+    # so they are far less alike than 50 random rows would need to be
+    from sklearn.cluster import MiniBatchKMeans
+    from fraudicl.tfm import _standardise
+    pool = np.concatenate([pos, neg])
+    labels = MiniBatchKMeans(n_clusters=N_CLUSTERS, random_state=0, n_init=3,
+                             batch_size=4096).fit_predict(_standardise(X, neg, pool))
+    cluster_of = dict(zip(neg, labels))
+    first = _legit_order("cluster", X, pos, neg, 0)[:N_CLUSTERS]
+    assert len({cluster_of[r] for r in first}) == N_CLUSTERS   # one row from every cluster
+    pca_order = _legit_order("pca", X, pos, neg, 0)
+    assert len(pca_order) == len(neg) and len(np.unique(pca_order)) == len(neg)

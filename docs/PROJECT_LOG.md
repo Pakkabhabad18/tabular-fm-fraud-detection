@@ -680,6 +680,40 @@ with 5 seeds.
 
 ---
 
+## 26 Nov: the last three W1 policies, and a check on why kNN fails
+
+**Three more policies (proposal W1: clustering-based, PCA-based, hard-negative).** The
+balanced results showed that putting every fraud in the context is what matters most, so
+all three keep exactly the frauds of the balanced policy and change only which
+legitimate rows fill the rest. Compared with balanced, the difference comes from that
+choice alone.
+- `cluster`: legitimate rows spread over 50 k-means clusters of the legitimate pool, one
+  from each cluster in turn, so rare kinds of legitimate transaction are represented.
+- `pca`: legitimate rows spread over the 3 leading principal components of the fraud rows
+  (5 quantile bins each, 125 cells, taken in turn).
+- `hard_negative`: half the slots go to the legitimate rows closest to a fraud, half to
+  random legitimate rows, alternating. Pure hard negatives would show the model only
+  fraud-like legitimate rows.
+Each policy produces an ordering of the legitimate rows and a context takes a prefix, so
+contexts stay nested across k. Distances use standardised features from training rows
+only. Building a 10K context takes under 2 seconds. The proposal listed hard-negative
+mining as a stretch goal; it costs almost nothing in this form, so it is included.
+
+**kNN diagnosis.** The saved kNN runs already point at two different causes:
+- `knn` at 0.172%: 49-92% of test rows were scored by a context with no fraud at all
+  (column `test_share_scored_without_fraud`), so they all get score 0.
+- `knn_balanced` has every fraud in every context, yet PR-AUC is 0.04-0.53 while ROC-AUC
+  stays 0.93-0.985. That pattern suggests each group is ranked well on its own but the
+  groups' scores are on different scales, so legitimate rows of one group outrank frauds
+  of another once all groups are pooled.
+`checks.knn_diagnosis` rebuilds the exact groups of each saved run and measures both
+(share of frauds scored 0, ranking inside groups vs pooled, spread of score scales).
+
+Notebook 09 runs the three policies for TabICLv2 (1% and 0.172%, k = 1K-10K, 5 seeds),
+XGBoost on the same rows, and the kNN diagnosis. 79 tests pass.
+
+---
+
 ## Open questions I am tracking
 
 - Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (18 of 18 cells positive, 3 significant after Holm).

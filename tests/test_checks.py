@@ -118,3 +118,22 @@ def test_confirmatory_verdict_follows_the_fixed_rule():
     assert yes["cells_tfm_ahead"] == 15 and yes["part1_direction_confirmed"] and yes["part2_largest_at_natural"]
     no = confirmatory_verdict(table([0.01] * 6 + [-0.01] * 12))
     assert not no["part1_direction_confirmed"]   # 6 of 18 is not a majority
+
+
+def test_knn_diagnosis_on_a_small_run(tmp_path):
+    from sklearn.linear_model import LogisticRegression
+    from fraudicl.checks import knn_diagnosis
+    from fraudicl.data import make_splits
+    from fraudicl.experiments import run_policy_sweep
+    rng = np.random.default_rng(0)
+    y = (rng.random(40_000) < 0.005).astype(int)
+    X = rng.normal(size=(40_000, 5)).astype(np.float32) + 1.2 * y[:, None]
+    splits = make_splits(y, seeds=[0], levels={"natural": None})
+    run_policy_sweep(X, y, splits, tmp_path, {"TabICLv2": lambda s: LogisticRegression(max_iter=300)},
+                     ["knn", "knn_balanced"], levels=["natural"], budgets=[1_000], seeds=[0])
+    for policy in ("knn", "knn_balanced"):
+        d = knn_diagnosis(tmp_path, X, y, splits[0], policy, 1_000)
+        assert d["n_groups"] >= 1 and 0 <= d["share_test_rows_no_fraud_context"] <= 1
+        assert 0 <= d["pooled_pr_auc"] <= 1 and 1 <= d["top_100_groups"] <= d["n_groups"]
+    # knn_balanced always puts every fraud in the context, so no group goes without
+    assert knn_diagnosis(tmp_path, X, y, splits[0], "knn_balanced", 1_000)["groups_without_fraud"] == 0

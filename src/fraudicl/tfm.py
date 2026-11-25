@@ -17,16 +17,21 @@ from __future__ import annotations
 import numpy as np
 
 # Context policies (W1). Three kinds, by how the context relates to the rows being predicted:
-#   one context for every row   : uniform, stratified, balanced
+#   one context for every row   : uniform, stratified, balanced, and the three that
+#                                 choose the legitimate rows on purpose: cluster,
+#                                 pca, hard_negative
 #   one context per group of rows: knn, knn_balanced        (query-conditional)
 #   several contexts, averaged   : ensemble_uniform, ensemble_balanced
-SINGLE_POLICIES = ("uniform", "stratified", "balanced", "uniform_fresh")
+# uniform_fresh is not a W1 policy: it is the confirmatory redraw of uniform.
+SELECTED_POLICIES = ("cluster", "pca", "hard_negative")   # need the features, not only labels
+SINGLE_POLICIES = ("uniform", "stratified", "balanced", "uniform_fresh") + SELECTED_POLICIES
 GROUP_POLICIES = ("knn", "knn_balanced")
 ENSEMBLE_POLICIES = ("ensemble_uniform", "ensemble_balanced")
 POLICIES = SINGLE_POLICIES + GROUP_POLICIES + ENSEMBLE_POLICIES
 
 
-def build_context(train_idx: np.ndarray, y: np.ndarray, k: int, policy: str, seed: int) -> np.ndarray:
+def build_context(train_idx: np.ndarray, y: np.ndarray, k: int, policy: str, seed: int,
+                  X: np.ndarray | None = None) -> np.ndarray:
     """Pick k context rows from one split's training rows.
 
     Uniform contexts are nested across k, the same way the fraud-rate levels are
@@ -57,7 +62,93 @@ def build_context(train_idx: np.ndarray, y: np.ndarray, k: int, policy: str, see
         pos, neg = _class_orders(train_idx, y, seed)
         n_pos = _n_frauds(policy, k, len(pos), len(train_idx))
         return np.sort(np.concatenate([pos[:n_pos], neg[:k - n_pos]]))
+    if policy in SELECTED_POLICIES:
+        if X is None:
+            raise ValueError(f"policy {policy!r} needs the feature matrix X")
+        pos, neg = _class_orders(train_idx, y, seed)
+        n_pos = _n_frauds("balanced", k, len(pos), len(train_idx))
+        neg_order = _legit_order(policy, X, pos, neg, seed)
+        return np.sort(np.concatenate([pos[:n_pos], neg_order[:k - n_pos]]))
     raise ValueError(f"unknown single-context policy {policy!r}")
+
+
+# ---------------------------------------------------------------- choosing the legitimate rows
+#
+# The balanced policy showed that putting every fraud in the context is what helps
+# most. These three keep exactly the same frauds as balanced and change only WHICH
+# legitimate rows fill the rest, so any difference from balanced is caused by that
+# choice. Each one returns the legitimate rows in an order; a context of size k takes
+# a prefix of that order, so the contexts stay nested across k like all the others.
+#
+#   cluster        spread over 50 k-means clusters of the legitimate rows, taking one
+#                  row from each cluster in turn. Rare kinds of legitimate transaction
+#                  get represented, where a random draw mostly repeats the common ones.
+#   pca            spread along the 3 leading principal components of the FRAUD rows:
+#                  legitimate rows are binned by where they fall on those directions
+#                  (5 x 5 x 5 cells) and taken from the cells in turn, so the model
+#                  sees legitimate rows across the region where fraud varies.
+#   hard_negative  half of the slots go to the legitimate rows closest to a fraud
+#                  (the boundary cases the model most needs to separate), the other
+#                  half to random legitimate rows, alternating. Pure hard negatives
+#                  would show the model only fraud-like legitimate rows.
+#
+# Distances use features standardised with the training pool's mean and std, as in
+# knn_groups, otherwise Amount and Time would decide everything. Only training rows
+# are used, so validation and test rows can never influence a context.
+
+N_CLUSTERS, N_PCS, N_BINS = 50, 3, 5
+
+
+def _standardise(X, rows, ref):
+    mu, sd = X[ref].mean(axis=0), X[ref].std(axis=0) + 1e-9
+    return (X[rows] - mu) / sd
+
+
+def _round_robin(groups, rng):
+    """Interleave groups: one row from each group in turn, rows shuffled inside each
+    group. A group that runs out simply drops out of the rotation."""
+    queues = [rng.permutation(g) for g in groups if len(g)]
+    out, i = [], 0
+    while queues:
+        queues = [q for q in queues if i < len(q)]
+        out.extend(q[i] for q in queues)
+        i += 1
+    return np.asarray(out, dtype=np.int64)
+
+
+def _legit_order(policy, X, pos, neg, seed):
+    rng = np.random.default_rng([seed, 11])
+    pool = np.concatenate([pos, neg])
+    if policy == "cluster":
+        from sklearn.cluster import MiniBatchKMeans
+        Z = _standardise(X, neg, pool)
+        labels = MiniBatchKMeans(n_clusters=N_CLUSTERS, random_state=seed, n_init=3,
+                                 batch_size=4096).fit_predict(Z)
+        return _round_robin([neg[labels == c] for c in range(N_CLUSTERS)], rng)
+    if policy == "pca":
+        from sklearn.decomposition import PCA
+        pca = PCA(n_components=N_PCS, random_state=seed).fit(_standardise(X, pos, pool))
+        P = pca.transform(_standardise(X, neg, pool))
+        # quantile bins on each component, so every bin holds a similar number of rows
+        cells = np.zeros(len(neg), dtype=np.int64)
+        for j in range(N_PCS):
+            edges = np.quantile(P[:, j], np.linspace(0, 1, N_BINS + 1)[1:-1])
+            cells = cells * N_BINS + np.searchsorted(edges, P[:, j])
+        return _round_robin([neg[cells == c] for c in range(N_BINS ** N_PCS)], rng)
+    if policy == "hard_negative":
+        from sklearn.neighbors import NearestNeighbors
+        dist, _ = NearestNeighbors(n_neighbors=1).fit(_standardise(X, pos, pool)).kneighbors(
+            _standardise(X, neg, pool))
+        hard = neg[np.argsort(dist[:, 0], kind="stable")]          # closest to a fraud first
+        rand = rng.permutation(neg)
+        out, seen = [], set()
+        for h, r in zip(hard, rand):                               # alternate hard / random
+            for row in (h, r):
+                if row not in seen:
+                    seen.add(row)
+                    out.append(row)
+        return np.asarray(out, dtype=np.int64)
+    raise ValueError(policy)
 
 
 def _class_orders(train_idx, y, seed):
