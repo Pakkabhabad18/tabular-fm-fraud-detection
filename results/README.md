@@ -30,6 +30,10 @@ them by notebook 04 or copied from the notebook printouts.
 | `rescore_by_test_mix_runs.csv` | notebook 07 | natural-rate models scored again on the 20%, 5%, 1% and 0.5% test sets, per seed |
 | `rescore_by_test_mix_summary.csv` | notebook 07 | mean over seeds, next to the PR-AUC of the model built at each rate (figure 6) |
 
+The per-run file was copied from the notebook printout (6 decimals); the summary and
+figure 6 were rebuilt from it with `report.rescore_summary` and
+`report.plot_rescore_by_test_mix` and match the Colab output to within 3e-7.
+
 ## Context policies (W1)
 
 | File | Made by | What it holds |

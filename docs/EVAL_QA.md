@@ -187,18 +187,88 @@ after. PR-AUC depends only on the order of the scores.
 
 ---
 
+## Questions raised at the mid-evaluation (24 Nov)
+
+**Q. The context gets bigger as the fraud rate goes down. Why does PR-AUC still fall?**
+Two reasons, and notebook 07 measures how much each one contributes.
+1. The context does not grow nearly as fast as fraud gets rarer. From 20% to 0.172% the
+   fraud rate falls 116 times, the context grows only 10 times (1K to 10K rows, the most
+   TabPFN v2 was pretrained for), so a random context holds about 200 frauds at 20% but
+   about 16 at 0.172%.
+2. The test set itself gets harder. Every test set has the same 98 frauds, but 392
+   legitimate rows at 20% and about 56,900 at 0.172%. With more legitimate rows the same
+   model makes more false alarms, so precision and PR-AUC fall.
+
+Notebook 07 takes the models built at 0.172% and scores them again on the 20% test set
+(the levels are nested, so every row already has a score). TabICLv2 gets 0.959 there,
+almost the 0.970 of the model built at 20%, against 0.762 on the natural test set. So
+about 95% of the fall is reason 2 and about 5% is reason 1 (TabPFN v2: 90% / 10%; for
+full-data XGBoost all of it is reason 2). At a fixed threshold TabICLv2 catches exactly
+the same frauds on every test set (recall 0.802) and only precision changes (1.000 on
+the 20% test set, 0.853 on the natural one). Evidence: `results/rescore_by_test_mix_summary.csv`, figure 6.
+
+**Q. Then is the 0.10 gap to XGBoost at 0.172% not real?**
+It is real for deployment, because the real test set is the natural one. But it is a
+small difference in ranking made large by the test mix: the same TabICLv2 and XGBoost
+models differ by 0.010 on the 20% test set and by 0.103 on the natural one.
+
+**Q. Did you compute F1, or only PR-AUC?**
+Every run has F1 at the threshold that gave the best F1 on validation, applied
+unchanged to test (`headline_table.csv`, `by_k_table.csv`). At 0.172%: TabICLv2 0.826,
+TabPFN v2 0.816, XGBoost on the same 10K rows 0.796, XGBoost on all rows 0.865. F1
+gives the same ordering as PR-AUC. I keep PR-AUC as the headline because F1 depends on
+one threshold, while PR-AUC summarises all of them.
+
+**Q. How exactly is the context given? Random?**
+By default yes: for each seed the training pool is shuffled once and the first k rows
+are taken (k = 1K, 2K, 5K or 10K, as far as the pool allows; at 20% the pool has only
+1,475 rows). The contexts are nested, so the 2K context is the 1K context plus 1,000
+more rows. The context is the full rows: 30 features plus the 0/1 label. The other
+policies (stratified, balanced, kNN, ensembles) change only which rows are picked.
+
+**Q. How are the test rows given, one at a time or all together? How many?**
+All the test rows of the split, 490 at 20% up to 56,962 at 0.172%, always 98 frauds.
+They go to the model in chunks of 10,000 only so they fit in GPU memory. Inside the
+model each test row attends to the context rows and never to the other test rows, so
+every row gets the same score it would get on its own and the chunk size changes
+nothing. Each of the 5 seeds has its own split and its own context.
+
+**Q. How do TabPFN v2 and TabICLv2 work inside?**
+Both are transformers trained once, before I use them, on synthetic tables only. The
+makers generate tables from random cause-and-effect graphs (structural causal models),
+hide some labels, and train the network to predict them from the rest. Done over about
+100 million tables, the network learns a general way of predicting from a labelled
+table. At use time the weights are frozen and my context plays the role of the
+training data.
+- TabPFN v2 (Hollmann et al., Nature 2025) gives every cell of the table its own
+  vector and alternates attention across the features of a row and across the rows of
+  a feature. Test rows read the training rows but never influence each other. Built for
+  up to 10,000 rows and 500 features; the cost grows with rows² × features, which is
+  why it is slow (5.1 s per 1,000 test rows at k = 10K).
+- TabICLv2 (Qu et al., 2026) first summarises each column, then compresses each row
+  into one vector, and only then runs attention across rows, with the labels added to
+  the context rows. Comparing rows as single vectors makes it about 8 times faster for
+  me (0.61 s per 1,000 rows). It was pretrained on tables up to 60K rows and uses a
+  rescaled attention so it can still pick out a few useful rows among thousands, which
+  is the situation of 16 frauds in a 10K context.
+Papers: `SMAI Project/03_papers/`.
+
+---
+
 ## Results so far
 
 **Q. What is the main result so far?**
 Full-data XGBoost: 0.966 at 20% down to 0.865 ± 0.022 at 0.172%. TFMs with a uniform
 context keep up at 20% and 5% (0.970 and 0.944) but fall about 0.10 behind at 0.172%
-(0.763 ± 0.020 for TabICLv2), all over 5 seeds. A balanced context cuts that gap to 0.05.
+(0.762 ± 0.020 for TabICLv2), all over 5 seeds. A balanced context cuts that gap to 0.05.
 
 **Q. Why do the TFMs fall behind below 1%?**
 A 10K uniform context at 0.172% contains only about 16 of the 295 training frauds
 (mean over 5 seeds). The model is shown very little of the class it has to find. On
 the same rows XGBoost does no better, and a balanced context with all the frauds
-recovers half the gap, so the problem is the context, not the model.
+recovers half the gap, so the problem is the context, not the model. Notebook 07 adds
+that most of the size of the gap comes from the natural test set: scored on the 20%
+test set, the same models differ by only 0.010.
 
 **Q. What is the most surprising observation?**
 Two things. First, with only about 1 fraud among 1,000 context rows, both TFMs reach

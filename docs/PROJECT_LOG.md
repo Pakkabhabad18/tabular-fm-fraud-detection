@@ -589,7 +589,49 @@ sets, with the same scores and the same F1 threshold. Whatever PR-AUC gains ther
 from the test mix alone; the rest of the gap to the model built at 20% is what that model
 learned from seeing more frauds. New code: `report.rescore_by_test_mix`,
 `report.rescore_summary`, `report.plot_rescore_by_test_mix` (figure 6), with two new tests
-(70 tests pass). Results to follow after running it in Colab.
+(70 tests pass).
+
+**Notebook 07 results (run in Colab 25 Nov, 5 seeds, CPU).** The control first checked
+that on the natural test set it gives back the saved PR-AUC of every run. Mean PR-AUC:
+
+| Model | Built at 20%, 20% test (headline) | Built at 0.172%, 20% test | Built at 0.172%, 0.172% test (headline) |
+| --- | --- | --- | --- |
+| XGBoost, all rows | 0.966 | 0.969 | 0.865 |
+| TabICLv2 | 0.970 | 0.959 | 0.762 |
+| TabPFN v2 | 0.969 | 0.946 | 0.741 |
+| XGBoost, same 10K rows | 0.961 | 0.951 | 0.780 |
+
+What it shows:
+- **Most of the fall is the test set, not the model.** TabICLv2 drops 0.208 from the
+  20% headline to the 0.172% headline. The same natural-rate model, with its 16-fraud
+  context, already scores 0.959 on the 20% test set, so 0.197 of the 0.208 (95%) comes
+  from the test mix and only 0.011 from what the 20% model learned from its ~200 frauds.
+  TabPFN v2: 0.205 of 0.228 (90%). Full-data XGBoost: all of it; its natural-rate model
+  is even slightly higher on the 20% test set (0.969) than the model built at 20% (0.966).
+- **The mechanism shows in the threshold numbers.** With the threshold fixed, recall stays
+  exactly the same on every test mix (TabICLv2 0.802: same frauds, same scores), and
+  precision falls from 1.000 on the 20% test set to 0.853 on the natural one, because the
+  same model now meets about 56,900 legitimate rows instead of 392.
+- **The test mix also blows up the gap between models.** On the 20% test set the
+  natural-rate TabICLv2 and XGBoost differ by 0.010 (0.959 vs 0.969); on the natural test
+  set the same two models differ by 0.103 (0.762 vs 0.865). A small difference in
+  ranking becomes a large PR-AUC gap when legitimate rows outnumber frauds 580 to 1.
+  That is the realistic setting, so the 0.10 gap is real for deployment, but it is not
+  evidence that the foundation models "understand" fraud much worse.
+- Recall at 0.1% false-positive rate moves little (TabICLv2 0.863 on the 20% test set,
+  0.829 on the natural one), as expected for a measure that ignores how many legitimate
+  rows there are. On the 20% test set 0.1% of 392 rows is less than one row, so that
+  value is coarse.
+
+**Rounding fix.** TabICLv2's PR-AUC at 0.172% with 10K rows is 0.76248, which rounds to
+0.762. Earlier text said 0.763 because it rounded the already-rounded 0.7625. Corrected
+in the README and the Q&A; older entries in this log keep the number they were written with.
+
+**How the files were produced.** I ran cells 1-5 of notebook 07 in Colab and printed the
+per-run table instead of downloading the zip. `results/rescore_by_test_mix_runs.csv` is
+that printout (rounded to 6 decimals); `rescore_by_test_mix_summary.csv` and figure 6
+were rebuilt from it with the same functions. Both checked against the full-precision
+Colab output (largest difference 3e-7) and against the saved natural-rate runs.
 
 **Context and test rows (question 3).** Context: k training rows; the default (uniform)
 shuffles the training pool with the seed and takes the first k, so contexts are nested

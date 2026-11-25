@@ -22,6 +22,17 @@ Card fraud sits exactly in that gap: in the ULB dataset only 0.17% of transactio
 
 The foundation models are used with frozen weights, so the only thing that can be changed is which rows go into the context. TabPFN v2 takes roughly 10K context rows; at a 0.17% fraud rate a random 10K-row sample holds about 17 frauds. The project compares several ways of building that context (uniform, stratified, class-balanced, nearest-neighbour retrieval, hard-negative mining, PCA- and clustering-based selection) across context sizes of 1K to 10K rows.
 
+## How the foundation models work
+
+Both are transformers pretrained only on synthetic tables: tables generated from random
+cause-and-effect graphs, with some labels hidden for the network to predict. After about
+100 million such tables the weights are frozen. At use time `fit` only stores the context
+(labelled rows) and each test row attends to those rows to get its fraud probability; test
+rows never attend to each other. TabPFN v2 keeps a vector per cell and alternates attention
+over features and rows (built for up to 10K rows); TabICLv2 compresses each row into one
+vector first, which makes it about 8 times faster here. Papers: Hollmann et al., Nature 2025
+(TabPFN v2); Qu et al., arXiv:2602.11139 (TabICLv2).
+
 ## Setup
 
 | | Classical arm | Modern arm |
@@ -62,7 +73,7 @@ A negative result with a supported explanation, for example that the advantage d
 | 5% | 5K | 0.944 ± 0.012 | 0.932 ± 0.015 | 0.932 ± 0.009 | 0.930 ± 0.014 |
 | 1% | 10K | 0.870 ± 0.034 | 0.865 ± 0.009 | 0.869 ± 0.023 | 0.894 ± 0.016 |
 | 0.5% | 10K | 0.820 ± 0.046 | 0.831 ± 0.025 | 0.826 ± 0.019 | 0.881 ± 0.020 |
-| 0.172% | 10K | 0.763 ± 0.020 | 0.741 ± 0.023 | 0.780 ± 0.043 | 0.865 ± 0.022 |
+| 0.172% | 10K | 0.762 ± 0.020 | 0.741 ± 0.023 | 0.780 ± 0.043 | 0.865 ± 0.022 |
 
 - Foundation models tie with full-data XGBoost at 20% and 5% and fall about 0.10 behind at 0.172%.
 - On the same k rows the two families are level at large k. A random 10K context at 0.172% holds only about 16 of the 295 training frauds; that, not the model family, explains the gap.
@@ -85,13 +96,14 @@ A negative result with a supported explanation, for example that the advantage d
 | XGBoost, all rows | 0.882 | 0.855 | 0.863 | 0.863 | 0.873 |
 
 - F1 tells the same story as PR-AUC: the families are level at 20% and 5%, and full-data XGBoost is ahead at 0.172%.
-- **Why the scores fall when fraud gets rarer, even though the context grows.** The context grows 10 times (1K to 10K rows) while the fraud rate falls 116 times, so a random context holds about 200 frauds at 20% but only about 16 at 0.172%. On top of that every test set holds the same 98 frauds, next to 392 legitimate rows at 20% and about 56,900 at 0.172%; more legitimate rows means more false alarms for the same model. Recall at 0.1% false-positive rate ignores how many legitimate rows there are, and for full-data XGBoost it stays at 0.86-0.88 at every rate while its PR-AUC falls from 0.966 to 0.865: the ranking skill is the same, the test set is harder. Notebook 07 separates the two effects by scoring the natural-rate models again on the smaller test sets.
+- **Why the scores fall when fraud gets rarer, even though the context grows.** The context grows 10 times (1K to 10K rows) while the fraud rate falls 116 times, so a random context holds about 200 frauds at 20% but only about 16 at 0.172%. On top of that every test set holds the same 98 frauds, next to 392 legitimate rows at 20% and about 56,900 at 0.172%; more legitimate rows means more false alarms for the same model. Recall at 0.1% false-positive rate ignores how many legitimate rows there are, and for full-data XGBoost it stays at 0.86-0.88 at every rate while its PR-AUC falls from 0.966 to 0.865: the ranking skill is the same, the test set is harder.
+- **Test-mix control (notebook 07, figure 6).** Scoring the models built at 0.172% again on the 20% test set, without changing them, gives back most of the drop: TabICLv2 0.959 (vs 0.970 for the model built at 20% and 0.762 on the natural test set), TabPFN v2 0.946, full-data XGBoost 0.969. So about 90-95% of the fall in PR-AUC comes from the test mix and only the rest from the context holding fewer frauds. At a fixed threshold recall does not move (TabICLv2 0.802) while precision falls from 1.000 to 0.853. The same mechanism stretches the gap between models: 0.010 between TabICLv2 and XGBoost on the 20% test set, 0.103 on the natural one.
 
 **2. Choosing the context (TabICLv2, PR-AUC at 0.172%).**
 
 | Policy | k = 1K | k = 10K |
 | --- | --- | --- |
-| uniform | 0.686 | 0.763 |
+| uniform | 0.686 | 0.762 |
 | balanced (all 295 training frauds) | 0.786 | 0.812 |
 | ensemble of 5 balanced contexts (2 seeds so far) | 0.794 | 0.858 |
 | kNN retrieval | 0.311 | 0.697 |
@@ -103,7 +115,7 @@ A negative result with a supported explanation, for example that the advantage d
 
 **3. Probabilities and thresholds (research question 3).** A balanced context makes the probabilities about 20 times too high at 0.172%; Bayes prior correction brings them back (ECE 0.038 → 0.0004 at k = 1K) without changing the ranking. The τ = π₁ threshold rule, tested elsewhere down to 5%, does not carry over: at 0.172% it catches about 90% of frauds but 8-9 of every 10 alerts are false.
 
-Figures: [`results/figures/`](results/figures/) (fig 1 headline, fig 2 PR-AUC by k, fig 3 score against frauds seen, fig 4 context policies, fig 5 reliability).
+Figures: [`results/figures/`](results/figures/) (fig 1 headline, fig 2 PR-AUC by k, fig 3 score against frauds seen, fig 4 context policies, fig 5 reliability, fig 6 test-mix control).
 
 **4. Sanity checks (notebook 06), all passed.** No context ever contains a validation or test row. Removing the 4 test frauds that have an exact duplicate in training lowers every model by 0.002-0.015, foundation models no more than XGBoost. With the context labels shuffled, PR-AUC falls from about 0.76 to 0.07-0.09 at 0.172% and to chance at 1%, so the models use the labels they are shown and are not recalling the dataset.
 
