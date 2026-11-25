@@ -135,7 +135,7 @@ Figures: [`results/figures/`](results/figures/) (fig 1 headline, fig 2 PR-AUC by
 | PR-AUC vs fraud-rate curve (success criterion ii) | core | done (fig 1) |
 | Ranked policy comparison with effect sizes (success criterion iii) | core | done (fig 4, `results/policy_table_tabiclv2.csv`) |
 | W2: ECE, reliability, τ = π₁ vs F1-best vs alert budget | extended | done |
-| W4: dataset-scale sweep, shot count, latency | extended | shot count done (k sweep); timings recorded per run; scale sweep after mid-eval |
+| W4: dataset-scale sweep, shot count, latency | extended | shot count done (k sweep); scale sweep and latency code done (26 Nov), runs in notebook 10 |
 | IEEE-CIS realism check | extended | after mid-eval |
 | W3: TFM embeddings into XGBoost | stretch | after mid-eval, if time allows |
 | Paired bootstrap over 5 seeds | core | done, plus Holm correction and sanity checks (notebook 06) |
@@ -158,13 +158,16 @@ src/fraudicl/  project code
   report.py      tables, figures and significance tests
   calibration.py W2: prior correction, ECE/Brier, threshold rules, reliability plot
   checks.py      sanity checks: context leakage, duplicated rows, shuffled labels,
-                 TFM vs same-rows XGBoost significance (Holm-corrected)
+                 TFM vs same-rows XGBoost significance (Holm-corrected), the
+                 confirmatory decision rule, kNN diagnosis
+  scale.py       W4: XGBoost on growing training sets, latency per transaction
 tests/         unit tests (python -m pytest tests -q)
 notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models (uniform context),
                04 results, 05 context policies (W1), 06 sanity checks,
                07 test-mix control (why PR-AUC falls as fraud gets rarer),
                08 confirmatory small-context run and seeds 2-4 for the W1 policies,
-               09 cluster, PCA and hard-negative contexts, and why kNN contexts fail
+               09 cluster, PCA and hard-negative contexts, and why kNN contexts fail,
+               10 scale (XGBoost on 1K-171K rows, TabICLv2 up to 50K context) and latency
 results/       summary tables (see results/README.md) and figures/ (figures 1-5);
                raw per-run outputs stay on Google Drive; archive_* files are
                superseded runs kept for the record

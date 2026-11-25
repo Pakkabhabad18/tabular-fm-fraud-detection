@@ -51,7 +51,7 @@ def fraud_rate(level: str) -> float:
 def load_runs(out_dir) -> pd.DataFrame:
     """One row per saved run (model x fraud rate x k x seed), all families together."""
     parts = []
-    for family in ("xgb", "tfm", "xgb_matched"):
+    for family in ("xgb", "tfm", "xgb_matched", "xgb_scale"):
         if os.path.exists(os.path.join(out_dir, "raw", family)):
             parts.append(collect(out_dir, family))
     df = pd.concat(parts, ignore_index=True)

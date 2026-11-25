@@ -24,7 +24,9 @@ import numpy as np
 #   several contexts, averaged   : ensemble_uniform, ensemble_balanced
 # uniform_fresh is not a W1 policy: it is the confirmatory redraw of uniform.
 SELECTED_POLICIES = ("cluster", "pca", "hard_negative")   # need the features, not only labels
-SINGLE_POLICIES = ("uniform", "stratified", "balanced", "uniform_fresh") + SELECTED_POLICIES
+# uniform_large (W4) is uniform with k above 10K (20K, 50K) for TabICLv2 only; same rows
+# and order as uniform, kept under its own name so the 1K-10K tables stay as they are.
+SINGLE_POLICIES = ("uniform", "stratified", "balanced", "uniform_fresh", "uniform_large") + SELECTED_POLICIES
 GROUP_POLICIES = ("knn", "knn_balanced")
 ENSEMBLE_POLICIES = ("ensemble_uniform", "ensemble_balanced")
 POLICIES = SINGLE_POLICIES + GROUP_POLICIES + ENSEMBLE_POLICIES
@@ -47,7 +49,7 @@ def build_context(train_idx: np.ndarray, y: np.ndarray, k: int, policy: str, see
     """
     if k > len(train_idx):
         raise ValueError(f"k={k} is larger than the training pool ({len(train_idx)} rows)")
-    if policy == "uniform":
+    if policy in ("uniform", "uniform_large"):
         order = np.random.default_rng(seed).permutation(train_idx)
         return np.sort(order[:k])
     if policy == "uniform_fresh":

@@ -714,6 +714,24 @@ XGBoost on the same rows, and the kNN diagnosis. 79 tests pass.
 
 ---
 
+## 26 Nov: scale and speed (W4)
+
+New module `scale.py` and notebook 10.
+- **More data.** At 0.172%, XGBoost (plain, with the settings tuned on the full training
+  set) is trained on N = 1K, 2K, 5K, 10K, 20K, 50K, 100K and all 170,883 rows. The rows
+  for each N are the first N of the same per-seed order as the uniform contexts, so the
+  10K subset is exactly the uniform 10K context and the curve lines up with the
+  foundation models' 1K-10K points. TabICLv2 is also run with 20K and 50K context rows
+  (policy `uniform_large`, same rows and order as uniform; TabPFN v2 stops at 10K). This
+  answers whether the 0.172% gap is the context cap.
+- **Speed.** Median time to score 1, 100 and 1,000 test transactions, for XGBoost on GPU
+  and CPU and for both foundation models with 1K and 10K contexts. The foundation models
+  process the whole context on every call, so single-transaction latency is the number
+  that decides whether they can sit inline at authorisation.
+Three new tests (82 pass).
+
+---
+
 ## Open questions I am tracking
 
 - Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (18 of 18 cells positive, 3 significant after Holm).
