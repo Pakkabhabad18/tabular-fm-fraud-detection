@@ -641,6 +641,45 @@ rows and never to each other, so each row gets the same score it would get alone
 
 ---
 
+## 25 Nov: confirmatory run, protocol fixed before running
+
+The small-context finding (3 Nov entry) was found after looking at the uniform runs, so
+it is tested again on contexts that no run has used yet. Everything below is written
+down before notebook 08 is run.
+
+**Hypothesis.** With a context of at most 2,000 rows, TabPFN v2 and TabICLv2 reach higher
+PR-AUC than XGBoost trained on the same rows, and the gap is largest at the natural
+fraud rate.
+
+**Data.** The same 5 splits. New contexts from the policy `uniform_fresh`: the same rule
+as uniform (k random training rows, nested across k) but drawn from a new random order
+seeded with (seed, 2026). k = 1K and 2K at every fraud rate where they fit: 9 cells per
+model, 18 in all. At 20% the training pool has only 1,475 rows, so a fresh 1K context
+there still shares about two thirds of its rows with the old one; that cell is the
+least "fresh".
+
+**Models.** TabICLv2 and TabPFN v2 with frozen weights; XGBoost (plain) trained on exactly
+the same fresh rows, tuned with 50 Optuna trials on seed 0's fresh context for each
+(fraud rate, k), as in the original matched runs.
+
+**Test and decision rule.**
+1. Per cell: mean PR-AUC difference (TFM minus XGBoost) over the 5 seeds, pooled paired
+   bootstrap (1,000 resamples) and Holm correction over the 18 cells.
+2. Direction: confirmed if the TFM is ahead in at least 13 of the 18 cells (one-sided
+   sign test at 5%; 13 of 18 gives p = 0.048).
+3. Where: confirmed if the mean difference over the 0.172% cells is larger than the
+   mean over the other cells.
+The Holm-significant count is reported but is not the decision, because the cells share
+seeds and nested contexts. Whatever the rule says is the result: if it fails, the
+small-context advantage is reported as not replicated.
+
+Code: `uniform_fresh` in `tfm.build_context`, `checks.confirmatory_verdict`; three new
+tests (73 pass). The same notebook also runs seeds 2-4 for the TabICLv2 ensembles and kNN
+policies and for XGBoost on the stratified and balanced rows, so every W1 policy ends up
+with 5 seeds.
+
+---
+
 ## Open questions I am tracking
 
 - Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (18 of 18 cells positive, 3 significant after Holm).

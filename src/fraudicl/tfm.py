@@ -20,7 +20,7 @@ import numpy as np
 #   one context for every row   : uniform, stratified, balanced
 #   one context per group of rows: knn, knn_balanced        (query-conditional)
 #   several contexts, averaged   : ensemble_uniform, ensemble_balanced
-SINGLE_POLICIES = ("uniform", "stratified", "balanced")
+SINGLE_POLICIES = ("uniform", "stratified", "balanced", "uniform_fresh")
 GROUP_POLICIES = ("knn", "knn_balanced")
 ENSEMBLE_POLICIES = ("ensemble_uniform", "ensemble_balanced")
 POLICIES = SINGLE_POLICIES + GROUP_POLICIES + ENSEMBLE_POLICIES
@@ -44,6 +44,14 @@ def build_context(train_idx: np.ndarray, y: np.ndarray, k: int, policy: str, see
         raise ValueError(f"k={k} is larger than the training pool ({len(train_idx)} rows)")
     if policy == "uniform":
         order = np.random.default_rng(seed).permutation(train_idx)
+        return np.sort(order[:k])
+    if policy == "uniform_fresh":
+        # Confirmatory run (Nov 2026): the same rule as uniform, but a new random
+        # order that no earlier run has used. The small-context finding was spotted
+        # in the uniform runs, so it has to be checked on contexts I have not looked
+        # at. Seeding with (seed, 2026) keeps this stream apart from uniform (seed),
+        # the class orders (seed, 7) and the context-variance draws (1000 + i).
+        order = np.random.default_rng([seed, 2026]).permutation(train_idx)
         return np.sort(order[:k])
     if policy in ("stratified", "balanced"):
         pos, neg = _class_orders(train_idx, y, seed)

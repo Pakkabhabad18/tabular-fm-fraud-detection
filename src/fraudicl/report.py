@@ -418,6 +418,7 @@ def policy_table(runs: pd.DataFrame, model: str, levels=("natural", "1")) -> pd.
     uniform. Pairing removes the split-to-split noise that both policies share.
     """
     sub = runs[(runs.model == model) & (runs.level.astype(str).isin(levels))]
+    sub = sub[sub.policy.isin(POLICY_ORDER)]   # W1 policies only, not the confirmatory draws
     base = sub[sub.policy == "uniform"].set_index(["level", "k", "seed"]).pr_auc
     rows = []
     for (level, k, policy), g in sub.groupby(["level", "k", "policy"], observed=True):
@@ -431,6 +432,8 @@ def policy_table(runs: pd.DataFrame, model: str, levels=("natural", "1")) -> pd.
             "seeds_better_than_uniform": int((diffs > 0).sum()),
         })
     out = pd.DataFrame(rows)
+    if out.empty:
+        return out
     out["policy"] = pd.Categorical(out.policy, POLICY_ORDER, ordered=True)
     return out.sort_values(["level", "k", "policy"]).reset_index(drop=True)
 

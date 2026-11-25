@@ -162,7 +162,8 @@ src/fraudicl/  project code
 tests/         unit tests (python -m pytest tests -q)
 notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models (uniform context),
                04 results, 05 context policies (W1), 06 sanity checks,
-               07 test-mix control (why PR-AUC falls as fraud gets rarer)
+               07 test-mix control (why PR-AUC falls as fraud gets rarer),
+               08 confirmatory small-context run and seeds 2-4 for the W1 policies
 results/       summary tables (see results/README.md) and figures/ (figures 1-5);
                raw per-run outputs stay on Google Drive; archive_* files are
                superseded runs kept for the record

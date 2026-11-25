@@ -270,3 +270,34 @@ def matched_tests(out_dir, y, runs: pd.DataFrame, models=("TabICLv2", "TabPFN v2
         df["level"] = pd.Categorical(df.level, LEVEL_ORDER, ordered=True)
         df = df.sort_values(["model", "level", "k"]).reset_index(drop=True)
     return df
+
+
+def confirmatory_verdict(table: pd.DataFrame) -> dict:
+    """Decision rule for the confirmatory small-context run, fixed in
+    docs/PROJECT_LOG.md (25 Nov) before the run was made.
+
+    table: matched_tests(..., policy="uniform_fresh") restricted to k <= 2K, one row
+    per (model, fraud rate, k) cell, 18 cells in all.
+
+    Hypothesis: with a context of at most 2,000 rows, TabPFN v2 and TabICLv2 reach
+    higher PR-AUC than XGBoost trained on the same rows, and the gap is largest at
+    the natural fraud rate.
+      part 1 (direction): sign test over the cells, one-sided at 5%. With 18 cells
+              that means the TFM ahead in at least 13 of them.
+      part 2 (where):     the mean difference over the 0.172% cells is larger than
+              the mean over all other cells.
+    Holm-adjusted per-cell p-values are reported as well, but they are secondary:
+    the cells share seeds and nested contexts, so they are not independent.
+    """
+    from scipy.stats import binomtest
+
+    t = table[table.k <= 2_000]
+    ahead = int((t.mean_diff > 0).sum())
+    sign_p = float(binomtest(ahead, len(t), 0.5, alternative="greater").pvalue)
+    natural = t[t.level.astype(str) == "natural"].mean_diff.mean()
+    others = t[t.level.astype(str) != "natural"].mean_diff.mean()
+    return {"n_cells": len(t), "cells_tfm_ahead": ahead, "sign_test_p": sign_p,
+            "part1_direction_confirmed": bool(sign_p < 0.05),
+            "mean_diff_natural": float(natural), "mean_diff_other_rates": float(others),
+            "part2_largest_at_natural": bool(natural > others),
+            "cells_holm_significant": int((t.p_holm < 0.05).sum()) if "p_holm" in t else None}

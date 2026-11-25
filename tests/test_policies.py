@@ -173,3 +173,25 @@ def test_predict_in_batches_with_one_class_model():
             return np.ones((len(X), 1))
 
     assert np.array_equal(predict_in_batches(OneClass(), X), np.zeros(50))
+
+
+def test_uniform_fresh_is_a_new_nested_draw(fake):
+    # the confirmatory contexts: same size rule as uniform, nested across k,
+    # reproducible, and not the rows the uniform runs used
+    X, y, splits = fake
+    s = _pool(splits)
+    a1 = build_context(s.train, y, 1_000, "uniform_fresh", 0)
+    a2 = build_context(s.train, y, 2_000, "uniform_fresh", 0)
+    assert len(a1) == 1_000 and set(a1) <= set(a2)
+    assert np.array_equal(a1, build_context(s.train, y, 1_000, "uniform_fresh", 0))
+    overlap = len(set(a1) & set(build_context(s.train, y, 1_000, "uniform", 0)))
+    assert overlap < 100   # two independent 1K draws from ~36K rows share ~28 rows
+
+
+def test_policy_table_ignores_confirmatory_runs():
+    import pandas as pd
+    runs = pd.DataFrame({"model": "TabICLv2", "level": "natural", "k": 1_000, "seed": [0, 0],
+                         "policy": ["uniform", "uniform_fresh"], "pr_auc": [0.7, 0.8],
+                         "context_frauds": [1, 2]})
+    t = R.policy_table(runs, "TabICLv2", levels=("natural",))
+    assert list(t.policy.astype(str)) == ["uniform"]

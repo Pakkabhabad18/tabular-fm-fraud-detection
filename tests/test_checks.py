@@ -104,3 +104,17 @@ def test_matched_tests_table(tmp_path):
     assert len(t) == 2 and (t.n_seeds == 2).all()
     assert (t.p_holm >= t.p_value - 1e-12).all()
     assert (t.ci_low <= t.mean_diff).all() and (t.mean_diff <= t.ci_high).all()
+
+
+def test_confirmatory_verdict_follows_the_fixed_rule():
+    import pandas as pd
+    from fraudicl.checks import confirmatory_verdict
+    levels = ["20", "5", "5", "1", "1", "0.5", "0.5", "natural", "natural"]
+    ks = [1_000, 1_000, 2_000, 1_000, 2_000, 1_000, 2_000, 1_000, 2_000]
+    def table(diffs):
+        return pd.DataFrame({"model": ["A"] * 9 + ["B"] * 9, "level": levels * 2, "k": ks * 2,
+                             "mean_diff": diffs, "p_holm": [0.5] * 18})
+    yes = confirmatory_verdict(table([0.01] * 7 + [0.05, 0.05] + [0.01] * 4 + [-0.01] * 3 + [0.04, 0.04]))
+    assert yes["cells_tfm_ahead"] == 15 and yes["part1_direction_confirmed"] and yes["part2_largest_at_natural"]
+    no = confirmatory_verdict(table([0.01] * 6 + [-0.01] * 12))
+    assert not no["part1_direction_confirmed"]   # 6 of 18 is not a majority
