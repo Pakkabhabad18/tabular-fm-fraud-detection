@@ -552,6 +552,53 @@ haven't been looked at.
 
 ---
 
+## 25 Nov: mid-evaluation feedback, F1 in the tables, test-mix control
+
+**Feedback at the mid-evaluation.**
+1. Why does PR-AUC fall when the fraud rate goes down, if the context gets bigger at the same time?
+2. Report F1 as well, not one score only.
+3. How exactly is the context built, and how are the test rows given to the model?
+4. Explain how the tabular foundation models work inside.
+
+**F1 was already computed, it just wasn't in the tables.** Every run saves F1 at the
+threshold that gave the best F1 on the validation set (`f1_at_val_threshold` in
+`runs_all.csv`). `headline_table.csv` and `by_k_table.csv` now carry F1 (mean and std),
+and the headline table also carries recall at 0.1% false-positive rate. Rebuilt from
+`runs_all.csv`; the existing columns did not change. Headline F1 at 0.172%: TabICLv2
+0.826, TabPFN v2 0.816, XGBoost on the same 10K rows 0.796, XGBoost on all rows 0.865.
+Same ordering as PR-AUC. One difference: at 0.172% with 10K rows the foundation models
+are ahead of same-rows XGBoost in F1 (0.826 vs 0.796) while slightly behind in PR-AUC
+(0.763 vs 0.780). Not tested for significance, so I only note it.
+
+**Why the score falls (question 1).** Two separate things happen as the fraud rate goes
+from 20% to 0.172%:
+- the context grows 10 times (1K to 10K rows) but the fraud rate falls 116 times, so a
+  random context holds about 200 frauds at 20% and about 16 at 0.172%;
+- every test set has the same 98 frauds, but 392 legitimate rows at 20% and about 56,900
+  at 0.172%. With more legitimate rows the same model makes more false alarms, so
+  precision, F1 and PR-AUC drop even if the model ranks just as well.
+
+Evidence already in the runs: recall at 0.1% false-positive rate does not depend on how
+many legitimate rows there are, and for full-data XGBoost it stays at 0.86-0.88 at every
+rate while its PR-AUC falls from 0.966 to 0.865.
+
+**Notebook 07 (test-mix control)** separates the two directly. The fraud-rate levels are
+nested, so the 20% test set is the natural test set with legitimate rows removed. It
+takes the models built at 0.172% and scores them again on the 20%, 5%, 1% and 0.5% test
+sets, with the same scores and the same F1 threshold. Whatever PR-AUC gains there comes
+from the test mix alone; the rest of the gap to the model built at 20% is what that model
+learned from seeing more frauds. New code: `report.rescore_by_test_mix`,
+`report.rescore_summary`, `report.plot_rescore_by_test_mix` (figure 6), with two new tests
+(70 tests pass). Results to follow after running it in Colab.
+
+**Context and test rows (question 3).** Context: k training rows; the default (uniform)
+shuffles the training pool with the seed and takes the first k, so contexts are nested
+across k. Test: every test row of the split (490 to 56,962 rows, always 98 frauds),
+passed in chunks of 10,000 only to fit in GPU memory. Test rows attend to the context
+rows and never to each other, so each row gets the same score it would get alone.
+
+---
+
 ## Open questions I am tracking
 
 - Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (18 of 18 cells positive, 3 significant after Holm).

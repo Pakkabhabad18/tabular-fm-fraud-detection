@@ -18,10 +18,17 @@ them by notebook 04 or copied from the notebook printouts.
 | --- | --- | --- |
 | `xgb_summary.csv`, `xgb_best_params.jsonl` | notebook 02 | full-data XGBoost, 3 variants, mean ± std over 5 seeds; tuned settings |
 | `t5_t6_uniform_by_k_5seeds.csv` | notebook 03 | TFMs and same-rows XGBoost for every fraud rate and k, uniform context |
-| `headline_table.csv` | notebook 04 | each model at the largest k that fits (figure 1) |
-| `by_k_table.csv` | notebook 04 | every model, fraud rate and k (figure 2) |
+| `headline_table.csv` | notebook 04 | each model at the largest k that fits (figure 1): PR-AUC, ROC-AUC, F1 at the validation threshold, recall at 0.1% false-positive rate |
+| `by_k_table.csv` | notebook 04 | every model, fraud rate and k (figure 2), PR-AUC and F1 |
 | `paired_tests.csv` | notebook 04 | each model vs full-data XGBoost, paired bootstrap per seed |
 | `runs_all.csv` | notebook 04 | one row per saved run, all metrics |
+
+## Test-mix control
+
+| File | Made by | What it holds |
+| --- | --- | --- |
+| `rescore_by_test_mix_runs.csv` | notebook 07 | natural-rate models scored again on the 20%, 5%, 1% and 0.5% test sets, per seed |
+| `rescore_by_test_mix_summary.csv` | notebook 07 | mean over seeds, next to the PR-AUC of the model built at each rate (figure 6) |
 
 ## Context policies (W1)
 
@@ -54,6 +61,7 @@ them by notebook 04 or copied from the notebook printouts.
 | `figures/fig3_context_frauds.png` | score against the number of frauds in the context, at 0.172% |
 | `figures/fig4_policies.png` | the context policies against k, at 0.172% and 1% |
 | `figures/fig5_reliability.png` | calibration at 0.172% before and after prior correction |
+| `figures/fig6_test_mix.png` | same natural-rate models on every test mix: how much of the PR-AUC drop is the test set itself |
 
 ## Superseded (kept for the record)
 

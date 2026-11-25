@@ -12,6 +12,7 @@ flatter the foundation models, so it is not done anywhere in this file.
 
 from __future__ import annotations
 
+import json
 import os
 
 import numpy as np
@@ -19,7 +20,7 @@ import pandas as pd
 
 from .config import CONTEXT_BUDGETS, PREVALENCE_LEVELS
 from .experiments import collect
-from .metrics import paired_bootstrap, pr_auc
+from .metrics import f1_at_threshold, paired_bootstrap, pr_auc, recall_at_fpr
 
 LEVEL_ORDER = ["20", "5", "1", "0.5", "natural"]
 NATURAL_RATE = 492 / 284_807          # 0.172%, the untouched ULB fraud rate
@@ -73,10 +74,21 @@ def largest_k(level: str, train_rows: dict) -> int:
 # ---------------------------------------------------------------- tables
 
 def headline_table(runs: pd.DataFrame, train_rows: dict) -> pd.DataFrame:
-    """Mean and std of PR-AUC over seeds, per model and fraud rate.
+    """Mean and std over seeds, per model and fraud rate.
 
     Full-data XGBoost uses all training rows. Each TFM and the matched XGBoost
     use the largest k at that fraud rate (see the module note).
+
+    Besides PR-AUC the table carries two numbers that answer different questions:
+      f1          F1 at the threshold that gave the best F1 on the validation set,
+                  applied unchanged to test. This is what a deployed model with
+                  one fixed cut-off would score.
+      recall_at_fpr_0.1pct
+                  share of the frauds caught while wrongly flagging at most 0.1% of
+                  legitimate rows. It does not depend on how many legitimate rows
+                  the test set has, so it shows ranking skill on its own; PR-AUC
+                  and F1 also fall just because the test set has more legitimate
+                  rows to make mistakes on.
     """
     runs = uniform_only(runs)
     rows = []
@@ -94,18 +106,23 @@ def headline_table(runs: pd.DataFrame, train_rows: dict) -> pd.DataFrame:
                 "n_seeds": sel.seed.nunique(),
                 "pr_auc_mean": sel.pr_auc.mean(), "pr_auc_std": sel.pr_auc.std(ddof=1),
                 "roc_auc_mean": sel.roc_auc.mean(),
+                "f1_mean": sel.f1_at_val_threshold.mean(),
+                "f1_std": sel.f1_at_val_threshold.std(ddof=1),
+                "recall_at_fpr_0.1pct_mean": sel["recall_at_fpr_0.1pct"].mean(),
                 "context_frauds_mean": sel["context_frauds"].mean() if "context_frauds" in sel else np.nan,
             })
     return pd.DataFrame(rows)
 
 
 def by_k_table(runs: pd.DataFrame) -> pd.DataFrame:
-    """Mean and std of PR-AUC for every (model, fraud rate, k) cell."""
+    """Mean and std of PR-AUC and F1 for every (model, fraud rate, k) cell."""
     sub = uniform_only(runs)
     sub = sub[sub.model.isin(TFM_MODELS + [MATCHED_XGB])]
     return (sub.groupby(["model", "level", "k"], observed=True)
                .agg(n_seeds=("seed", "nunique"), pr_auc_mean=("pr_auc", "mean"),
-                    pr_auc_std=("pr_auc", "std"), context_frauds_mean=("context_frauds", "mean"),
+                    pr_auc_std=("pr_auc", "std"),
+                    f1_mean=("f1_at_val_threshold", "mean"), f1_std=("f1_at_val_threshold", "std"),
+                    context_frauds_mean=("context_frauds", "mean"),
                     seeds_with_no_fraud=("context_frauds", lambda c: int((c == 0).sum())))
                .reset_index())
 
@@ -143,20 +160,110 @@ def paired_tests(out_dir, y, runs: pd.DataFrame, train_rows: dict, n_boot=1000) 
     return pd.DataFrame(rows)
 
 
+def _run_path(out_dir, model, level, k, seed):
+    """Path of one saved run without the extension (.npz has scores, .json metrics)."""
+    if model == HEADLINE_XGB:
+        return os.path.join(out_dir, "raw", "xgb", f"xgb_plain__{level}__seed{seed}")
+    if model == MATCHED_XGB:
+        return os.path.join(out_dir, "raw", "xgb_matched",
+                            f"xgb_plain_matched_uniform__{level}__k{k}__seed{seed}")
+    tag = model.lower().replace(" ", "")
+    return os.path.join(out_dir, "raw", "tfm", f"{tag}_uniform__{level}__k{k}__seed{seed}")
+
+
 def _scores(out_dir, model, level, k, seed):
     """Test row indices and scores of one saved run, or None if it isn't there."""
-    if model == HEADLINE_XGB:
-        path = os.path.join(out_dir, "raw", "xgb", f"xgb_plain__{level}__seed{seed}.npz")
-    elif model == MATCHED_XGB:
-        path = os.path.join(out_dir, "raw", "xgb_matched",
-                            f"xgb_plain_matched_uniform__{level}__k{k}__seed{seed}.npz")
-    else:
-        tag = model.lower().replace(" ", "")
-        path = os.path.join(out_dir, "raw", "tfm", f"{tag}_uniform__{level}__k{k}__seed{seed}.npz")
+    path = _run_path(out_dir, model, level, k, seed) + ".npz"
     if not os.path.exists(path):
         return None
     d = np.load(path)
     return d["test_idx"], d["test_scores"]
+
+
+# ---------------------------------------------------------------- test-mix control
+
+def rescore_by_test_mix(out_dir, y, splits, train_rows) -> pd.DataFrame:
+    """Score the models built at the natural fraud rate again on the test sets of
+    the other fraud rates, without touching the models or their scores.
+
+    Why: PR-AUC falls from 20% fraud to 0.172% for two separate reasons, and the
+    headline table mixes them.
+      (a) the model learned less: its context (or training set) held fewer frauds;
+      (b) the test set got harder to score well on: it always holds the same 98
+          frauds, but 392 legitimate rows at 20% and ~56,900 at 0.172%, so every
+          fraud-looking legitimate row costs precision.
+    Here (a) is held fixed: one model, one set of scores. Only the test mix
+    changes. This works because the fraud-rate levels are nested: the 20% test
+    set is the natural test set with legitimate rows removed, so every row in it
+    already has a score from the natural-rate model.
+
+    The F1 threshold is the one picked on the natural validation set and is never
+    moved, so recall at that threshold stays the same on every test mix (same
+    frauds, same scores) and only precision changes.
+
+    One row per (model, seed, test fraud rate).
+    """
+    by_key = {(s.seed, s.level): s for s in splits}
+    seeds = sorted({s.seed for s in splits})
+    k_nat = largest_k("natural", train_rows)
+    rows = []
+    for model in [HEADLINE_XGB, *TFM_MODELS, MATCHED_XGB]:
+        k = None if model == HEADLINE_XGB else k_nat
+        for seed in seeds:
+            base = _run_path(out_dir, model, "natural", k, seed)
+            if not os.path.exists(base + ".npz"):
+                continue
+            d = np.load(base + ".npz")
+            test_idx, scores = d["test_idx"], d["test_scores"]
+            with open(base + ".json") as f:
+                threshold = json.load(f)["val_threshold"]
+            for level in [l for l in LEVEL_ORDER if (seed, l) in by_key]:
+                keep = np.isin(test_idx, by_key[(seed, level)].test)
+                # every row of the smaller test set must already be in the natural one
+                assert keep.sum() == len(by_key[(seed, level)].test), "fraud-rate levels are not nested"
+                yt, st = y[test_idx[keep]], scores[keep]
+                flagged = st >= threshold
+                tp = int((flagged & (yt == 1)).sum())
+                rows.append({
+                    "model": model, "seed": seed, "built_at": "natural", "k": k,
+                    "test_level": level, "test_fraud_rate": float(yt.mean()),
+                    "test_rows": int(keep.sum()), "test_frauds": int(yt.sum()),
+                    "pr_auc": pr_auc(yt, st),
+                    "recall_at_fpr_0.1pct": recall_at_fpr(yt, st, 0.001),
+                    "f1_at_val_threshold": f1_at_threshold(yt, st, threshold),
+                    "precision_at_val_threshold": tp / flagged.sum() if flagged.any() else 0.0,
+                    "recall_at_val_threshold": tp / max(int(yt.sum()), 1),
+                })
+    return pd.DataFrame(rows)
+
+
+def rescore_summary(control: pd.DataFrame, headline: pd.DataFrame) -> pd.DataFrame:
+    """Mean over seeds of the control, next to the headline PR-AUC of the model
+    built at that same fraud rate (its own context or training set).
+
+    Reading one row, e.g. TabICLv2 at test fraud rate 20%:
+      pr_auc_natural_model  natural-rate model scored on the 20% test set
+      pr_auc_own_model      model built at 20% scored on the 20% test set (headline)
+    The step from pr_auc_natural_model at 0.172% up to pr_auc_natural_model at 20%
+    is the test-mix effect (b). What is left between pr_auc_natural_model and
+    pr_auc_own_model at 20% is the effect of what the model learned (a).
+    """
+    m = (control.groupby(["model", "test_level"], observed=True)
+         .agg(n_seeds=("seed", "nunique"), test_rows=("test_rows", "first"),
+              test_frauds=("test_frauds", "first"), test_fraud_rate=("test_fraud_rate", "mean"),
+              pr_auc_natural_model=("pr_auc", "mean"), pr_auc_natural_model_std=("pr_auc", "std"),
+              recall_at_fpr_0_1pct=("recall_at_fpr_0.1pct", "mean"),
+              recall_at_val_threshold=("recall_at_val_threshold", "mean"),
+              precision_at_val_threshold=("precision_at_val_threshold", "mean"),
+              f1_at_val_threshold=("f1_at_val_threshold", "mean"))
+         .reset_index())
+    own = headline[["model", "level", "pr_auc_mean"]].rename(
+        columns={"level": "test_level", "pr_auc_mean": "pr_auc_own_model"})
+    own["test_level"] = own["test_level"].astype(str)
+    m["test_level"] = m["test_level"].astype(str)
+    out = m.merge(own, on=["model", "test_level"], how="left")
+    out["test_level"] = pd.Categorical(out["test_level"], LEVEL_ORDER, ordered=True)
+    return out.sort_values(["model", "test_level"]).reset_index(drop=True)
 
 
 # ---------------------------------------------------------------- figures
@@ -364,5 +471,51 @@ def plot_policies(table: pd.DataFrame, xgb_runs: pd.DataFrame, path: str, levels
     fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False, fontsize=8.5,
                bbox_to_anchor=(0.5, -0.08))
     fig.tight_layout(rect=(0, 0.1, 1, 1))
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_rescore_by_test_mix(summary: pd.DataFrame, path: str):
+    """Figure 6: separating the two reasons PR-AUC falls as fraud gets rarer.
+
+    Solid lines: models built at the natural rate (0.172%), scored on the test
+    sets of every fraud rate. The model and its scores never change, only how
+    many legitimate rows sit next to the 98 test frauds.
+    Dashed lines: the headline curve, a model built at each fraud rate and scored
+    on that rate's test set.
+    Where the solid line already climbs as the test set gets smaller, the drop in
+    PR-AUC is caused by the test mix. The gap between dashed and solid at 20% is
+    what the model built at 20% learned beyond the natural-rate one.
+    """
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.4), dpi=150)
+    for model in [HEADLINE_XGB, *TFM_MODELS]:
+        t = summary[summary.model == model].sort_values("test_fraud_rate", ascending=False)
+        if t.empty:
+            continue
+        st = STYLE[model]
+        ax.plot(t.test_fraud_rate, t.pr_auc_natural_model, color=st["color"], ls="-", marker=st["marker"],
+                ms=6, lw=2, markeredgecolor="white", markeredgewidth=1,
+                label=f"{model}, built at 0.172%, scored on each test mix")
+        ax.plot(t.test_fraud_rate, t.pr_auc_own_model, color=st["color"], ls="--", lw=1.4, alpha=0.8,
+                label=f"{model}, built at each fraud rate (headline)")
+    ticks = (summary.groupby("test_level", observed=True).test_fraud_rate.mean()
+             .reset_index().sort_values("test_fraud_rate", ascending=False))
+    ax.set_xscale("log")
+    ax.invert_xaxis()
+    ax.set_xticks(ticks.test_fraud_rate)
+    ax.set_xticklabels([LEVEL_LABEL[str(l)] for l in ticks.test_level])
+    ax.minorticks_off()
+    lowest = np.nanmin(summary[["pr_auc_natural_model", "pr_auc_own_model"]].to_numpy(float))
+    ax.set_ylim(max(0.0, np.floor((lowest - 0.05) * 20) / 20), 1.0)
+    ax.set_xlabel("Fraud rate of the test set (log scale, rarer to the right)", color=INK, fontsize=10)
+    ax.set_ylabel("Test PR-AUC (mean over seeds)", color=INK, fontsize=10)
+    ax.set_title("Same models, different test mix: how much of the drop is the test set itself",
+                 color=INK, fontsize=10.5, loc="left")
+    _style_axes(ax)
+    # legend under the plot, so it never covers a line
+    ax.legend(frameon=False, fontsize=7.5, loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2)
+    fig.tight_layout()
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)

@@ -4,7 +4,7 @@
 
 Prakash Bhabad · IIIT Hyderabad · 2026
 
-> **Status (2 Nov 2026):** XGBoost and uniform-context foundation models done (5 seeds); first context-policy comparison done (TabICLv2); leakage, duplicate, memorisation and significance checks passed. Proposal: [`docs/proposal.pdf`](docs/proposal.pdf). Step-by-step record: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md). Mid-evaluation: 2–4 Nov 2026. Final submission: 30 Nov 2026.
+> **Status (25 Nov 2026):** XGBoost and uniform-context foundation models done (5 seeds); first context-policy comparison done (TabICLv2); leakage, duplicate, memorisation and significance checks passed; mid-evaluation done ([slides](docs/mid_evaluation_slides.pdf)). Proposal: [`docs/proposal.pdf`](docs/proposal.pdf). Step-by-step record: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md). Final submission: 30 Nov 2026.
 
 ---
 
@@ -39,7 +39,7 @@ Both arms share the same splits and the same scoring code. Training XGBoost on t
 Accuracy is not used: predicting "no fraud" for every transaction already scores 99.83%.
 
 - **Primary:** PR-AUC, with ROC-AUC alongside for comparison with published work, and recall when flagging only the top 1% of transactions
-- **Operational:** precision at a 0.1% alert budget, recall at 0.1% false-positive rate
+- **Operational:** precision at a 0.1% alert budget, recall at 0.1% false-positive rate, and F1 at the threshold picked on the validation set
 - **Calibration:** expected calibration error and reliability diagrams
 - **Cost:** per-record inference latency and memory, against tree inference
 - **Statistics:** five stratified repeats with paired bootstrap tests, since the dataset has only 492 frauds
@@ -67,6 +67,25 @@ A negative result with a supported explanation, for example that the advantage d
 - Foundation models tie with full-data XGBoost at 20% and 5% and fall about 0.10 behind at 0.172%.
 - On the same k rows the two families are level at large k. A random 10K context at 0.172% holds only about 16 of the 295 training frauds; that, not the model family, explains the gap.
 - With small contexts (1-2K rows) the foundation models are ahead of XGBoost trained on the same rows in all 18 such cells (+0.003 to +0.065, largest at 0.172%); 3 are significant after Holm correction. From 5K rows on the two are level. Found after looking at the results, so a confirmatory run on fresh contexts is planned.
+
+**1b. The same runs in F1 and in recall at 0.1% false-positive rate.** F1 uses the threshold that gave the best F1 on the validation set, applied unchanged to test.
+
+| Fraud rate | k | TabICLv2 | TabPFN v2 | XGBoost, same k rows | XGBoost, all rows |
+| --- | --- | --- | --- | --- | --- |
+| 20% | 1K | 0.933 | 0.932 | 0.920 | 0.917 |
+| 5% | 5K | 0.912 | 0.925 | 0.915 | 0.908 |
+| 1% | 10K | 0.878 | 0.886 | 0.875 | 0.892 |
+| 0.5% | 10K | 0.862 | 0.860 | 0.863 | 0.881 |
+| 0.172% | 10K | 0.826 | 0.816 | 0.796 | 0.865 |
+
+| Recall at 0.1% false-positive rate | 20% | 5% | 1% | 0.5% | 0.172% |
+| --- | --- | --- | --- | --- | --- |
+| TabICLv2 | 0.880 | 0.880 | 0.859 | 0.843 | 0.829 |
+| TabPFN v2 | 0.880 | 0.871 | 0.855 | 0.847 | 0.835 |
+| XGBoost, all rows | 0.882 | 0.855 | 0.863 | 0.863 | 0.873 |
+
+- F1 tells the same story as PR-AUC: the families are level at 20% and 5%, and full-data XGBoost is ahead at 0.172%.
+- **Why the scores fall when fraud gets rarer, even though the context grows.** The context grows 10 times (1K to 10K rows) while the fraud rate falls 116 times, so a random context holds about 200 frauds at 20% but only about 16 at 0.172%. On top of that every test set holds the same 98 frauds, next to 392 legitimate rows at 20% and about 56,900 at 0.172%; more legitimate rows means more false alarms for the same model. Recall at 0.1% false-positive rate ignores how many legitimate rows there are, and for full-data XGBoost it stays at 0.86-0.88 at every rate while its PR-AUC falls from 0.966 to 0.865: the ranking skill is the same, the test set is harder. Notebook 07 separates the two effects by scoring the natural-rate models again on the smaller test sets.
 
 **2. Choosing the context (TabICLv2, PR-AUC at 0.172%).**
 
@@ -130,7 +149,8 @@ src/fraudicl/  project code
                  TFM vs same-rows XGBoost significance (Holm-corrected)
 tests/         unit tests (python -m pytest tests -q)
 notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models (uniform context),
-               04 results, 05 context policies (W1), 06 sanity checks
+               04 results, 05 context policies (W1), 06 sanity checks,
+               07 test-mix control (why PR-AUC falls as fraud gets rarer)
 results/       summary tables (see results/README.md) and figures/ (figures 1-5);
                raw per-run outputs stay on Google Drive; archive_* files are
                superseded runs kept for the record
