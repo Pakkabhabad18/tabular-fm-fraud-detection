@@ -66,7 +66,7 @@ A negative result with a supported explanation, for example that the advantage d
 
 - Foundation models tie with full-data XGBoost at 20% and 5% and fall about 0.10 behind at 0.172%.
 - On the same k rows the two families are level at large k. A random 10K context at 0.172% holds only about 16 of the 295 training frauds; that, not the model family, explains the gap.
-- When the context holds only 1-10 frauds, the foundation models are ahead of XGBoost on the same rows in all 10 such cells (+0.01 to +0.06). Significant after Holm correction for TabPFN v2 at 0.172% with k = 1K and 2K. Found after looking at the results, so a confirmatory run on fresh contexts is planned.
+- With small contexts (1-2K rows) the foundation models are ahead of XGBoost trained on the same rows in all 18 such cells (+0.003 to +0.065, largest at 0.172%); 3 are significant after Holm correction. From 5K rows on the two are level. Found after looking at the results, so a confirmatory run on fresh contexts is planned.
 
 **2. Choosing the context (TabICLv2, PR-AUC at 0.172%).**
 
@@ -91,6 +91,24 @@ Figures: [`results/figures/`](results/figures/) (fig 1 headline, fig 2 PR-AUC by
 - ROC-AUC stays near 0.98 at every fraud rate while PR-AUC falls, which is why PR-AUC is the headline metric.
 - `scale_pos_weight` and SMOTE do not beat plain XGBoost with a tuned threshold, and SMOTE gives worse-calibrated probabilities.
 
+## Progress against the proposal
+
+| Proposal item | Tier | Status |
+| --- | --- | --- |
+| Data pipeline, fixed splits, prevalence sweep (5 rates × 5 seeds) | core | done |
+| Tuned XGBoost: plain + threshold, `scale_pos_weight`, SMOTE; 50 Optuna trials | core | done |
+| TabPFN v2 and TabICLv2 inference, context budgets 1K-10K | core | done |
+| Matched-budget XGBoost (same k rows) | core | done |
+| W1: uniform, stratified, balanced, kNN, ensembles of disjoint contexts | core | done for TabICLv2 (kNN and ensembles on 2-3 seeds) |
+| W1: hard-negative, PCA-based, clustering-based contexts | core / stretch | after mid-eval |
+| PR-AUC vs fraud-rate curve (success criterion ii) | core | done (fig 1) |
+| Ranked policy comparison with effect sizes (success criterion iii) | core | done (fig 4, `results/policy_table_tabiclv2.csv`) |
+| W2: ECE, reliability, τ = π₁ vs F1-best vs alert budget | extended | done |
+| W4: dataset-scale sweep, shot count, latency | extended | shot count done (k sweep); timings recorded per run; scale sweep after mid-eval |
+| IEEE-CIS realism check | extended | after mid-eval |
+| W3: TFM embeddings into XGBoost | stretch | after mid-eval, if time allows |
+| Paired bootstrap over 5 seeds | core | done, plus Holm correction and sanity checks (notebook 06) |
+
 Details, reasons and corrections: [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md). Expected evaluation questions: [`docs/EVAL_QA.md`](docs/EVAL_QA.md).
 
 ## Repository layout
@@ -113,8 +131,9 @@ src/fraudicl/  project code
 tests/         unit tests (python -m pytest tests -q)
 notebooks/     00 smoke test, 01 splits, 02 XGBoost, 03 foundation models (uniform context),
                04 results, 05 context policies (W1), 06 sanity checks
-results/       summary tables and figures (raw per-run outputs stay on Google Drive);
-               archive_* files are superseded runs kept for the record
+results/       summary tables (see results/README.md) and figures/ (figures 1-5);
+               raw per-run outputs stay on Google Drive; archive_* files are
+               superseded runs kept for the record
 ```
 
 Data is not stored in the repo. ULB is downloaded with `kagglehub` inside each notebook.

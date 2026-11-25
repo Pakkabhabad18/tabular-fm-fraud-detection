@@ -236,11 +236,13 @@ about 90% below the real-label score, which memorisation wouldn't give.
 
 **Q. Do the TFMs really beat XGBoost when frauds are scarce?**
 Not full-data XGBoost: it's 0.10 ahead at 0.172% with a random context, and 0.05 ahead
-with a balanced one. Against XGBoost trained on the same rows: when the context holds
-fewer than 10 frauds, the TFM is ahead in all 10 such cells (+0.006 to +0.065), 8 with
-p < 0.05, and 2 (TabPFN v2 at 0.172% with 1K and 2K rows) still significant after Holm
-correction. With more frauds the two are level. I spotted this after seeing the
-results, so it's supporting evidence; the confirmatory test on fresh contexts comes next.
+with a balanced one. Against XGBoost trained on the same rows, what matters is the
+size of the context: with 1-2K rows the TFM is ahead in all 18 cells (every fraud
+rate, both models), 13 with p < 0.05 and 3 still significant after Holm correction.
+The gain is biggest at 0.172% (+0.04 to +0.065). From 5K rows on, trees catch up. I
+first described it as "fewer than 10 frauds", but the 0.172% / 5K cell (8.8 frauds,
+XGBoost level) rules that out, so I corrected it. It's exploratory until the
+confirmatory run on fresh contexts.
 
 **Q. What is Holm's correction and why use it?**
 I test 32 cells. At p < 0.05, about 1-2 would look significant by luck alone. Holm
@@ -300,7 +302,16 @@ Both are in `docs/PROJECT_LOG.md`, with the old results kept as `results/archive
 ## What comes next
 
 **Q. What will you show at the final evaluation that isn't here yet?**
-- All 5 seeds for the TFMs.
-- The W1 context-policy comparison (stratified, class-balanced, kNN, hard negatives, PCA, clustering, ensembles of disjoint contexts) with effect sizes.
-- W4: dataset size and context size against both score and latency.
+- The remaining W1 policies from the proposal: hard-negative, PCA-based and clustering-based contexts, and seeds 2-4 for kNN and the ensembles.
+- A confirmatory run for the small-k advantage on fresh contexts, with the hypothesis fixed in advance.
+- Why kNN contexts fail, and whether per-cluster prior correction fixes them.
+- W4: score and prediction time as the training pool grows, against XGBoost.
 - The IEEE-CIS realism check.
+- W3 (frozen TabPFN embeddings into XGBoost) only if time allows; it's the stretch item.
+
+**Q. What changed from the proposal?**
+- Compute: everything ran on a Colab T4, not the ADA cluster. Runs are saved one at a time to Drive so a disconnect only loses the current run.
+- The mid-evaluation moved from the planned week 6 to 2-4 Nov, so W2 (calibration and thresholds) is already done, earlier than planned.
+- XGBoost's search range for `min_child_weight` was widened after I found it blocked learning from 1-2 frauds; both XGBoost arms were retuned.
+- Added beyond the proposal: leakage, duplicate and shuffled-label checks, Holm correction, and a test of how much the result depends on the context draw alone.
+- Target encoding and imputation from the proposal are only needed for IEEE-CIS; ULB has no categorical or missing values.

@@ -356,6 +356,7 @@ context holds 25+ frauds they are level. Each cell alone is within noise, and I
 found the pattern by looking at test results, so for now this is a hypothesis, not
 a finding. It needs a significance test and then a confirmatory run on contexts
 that haven't been looked at.
+(Corrected on 3 Nov: the pattern follows context size, not the number of frauds. See "3 Nov: correcting the small-k claim".)
 
 ---
 
@@ -395,7 +396,7 @@ also picks the fraud column by class label instead of by position. Two tests add
 
 **What.** Notebook 05. Uniform, stratified and balanced have 5 seeds; kNN and the
 ensembles have 2-3 seeds so far (the first session stopped partway). Tables:
-`results/w1_policy_table_tabiclv2_partial.csv`, `results/w1_context_variance_seed0.csv`.
+`results/policy_table_tabiclv2.csv`, `results/context_variance.csv` (from notebook 04).
 
 **PR-AUC at 0.172% fraud (mean over seeds).**
 
@@ -460,19 +461,7 @@ That is an outlier effect, not memory, and it's worth one sentence in the report
 - Just above the cut-off (p_holm 0.056): TabICLv2 at 0.172% with k = 2K (+0.048), TabICLv2 at 5% with k = 2K, TabPFN v2 at 20%.
 - No cell where XGBoost is significantly better after correction. The closest is TabPFN v2 at 0.172% with k = 10K (-0.039, raw p 0.008, p_holm 0.2).
 
-**What it means for the small-k pattern.** In all 10 cells where the context holds
-fewer than 10 frauds (0.172% at 1K and 2K, 0.5% at 1K and 2K, 1% at 1K, for both
-models), the foundation model is ahead of XGBoost on the same rows, by +0.006 to
-+0.065. 8 of the 10 have raw p < 0.05, and 2 survive Holm. Where the context holds 25+
-frauds the differences scatter around zero, and at 0.172% with 10K rows XGBoost tends
-to be ahead. So the picture is a crossover: in-context learning gets more from a
-handful of frauds, and trees catch up once there is more to learn from.
-
-This is supporting evidence, not proof. The 10 cells share seeds and nested contexts,
-so they aren't independent, and I found the pattern after seeing the results. The
-confirmatory run will use fresh context draws and a hypothesis fixed in advance:
-"With fewer than 10 frauds in the context, TabPFN v2 and TabICLv2 beat XGBoost trained
-on the same rows in PR-AUC."
+**What it means for the small-k pattern.** Corrected on 3 Nov; see the next entry.
 
 ---
 
@@ -531,9 +520,41 @@ of 57 on its 2 seeds.
 
 ---
 
+## 3 Nov: correcting the small-k claim
+
+**What was wrong.** I first described the pattern as "the TFM wins when the context
+holds fewer than 10 frauds". Rechecking the check-4 table while preparing the
+mid-eval slides, the 0.172% cell with k = 5K holds 8.8 frauds on average, and there
+XGBoost on the same rows is level or slightly ahead (TabICLv2 -0.001, TabPFN v2
+-0.014). So the fraud count is not what separates the cells.
+
+**What the table actually shows.** The split is by context size:
+
+| Cells | Count | TFM ahead | Raw p < 0.05 | Holm p < 0.05 | Difference range |
+| --- | --- | --- | --- | --- | --- |
+| k ≤ 2K (every fraud rate, both models) | 18 | 18 | 13 | 3 | +0.003 to +0.065 |
+| k ≥ 5K | 14 | 4 | 2 | 1 | -0.039 to +0.012 |
+
+The 3 Holm-significant small-k cells: TabPFN v2 at 0.172% with 1K (+0.053) and 2K
+(+0.065), TabICLv2 at 20% with 1K (+0.009). The gain is largest where frauds are
+rarest (+0.04 to +0.065 at 0.172%, about +0.01 at 20%).
+
+**Corrected reading.** With 1-2K training rows, in-context learning beats a tuned
+tree trained on the same rows, at every fraud rate, and most clearly at 0.172%. From
+5K rows on, trees catch up and at 0.172% with 10K rows tend to be ahead. This fits what
+TFMs were built for (small tables). It is still exploratory: I found it after seeing
+the results and the cells share seeds and nested contexts.
+
+**Hypothesis for the confirmatory run, fixed now:** "With a context of at most 2,000
+rows, TabPFN v2 and TabICLv2 reach higher PR-AUC than XGBoost trained on the same rows,
+and the gap is largest at the natural fraud rate." Tested on fresh context draws that
+haven't been looked at.
+
+---
+
 ## Open questions I am tracking
 
-- Does the small-k advantage hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (10 of 10 cells positive, 2 significant after Holm).
+- Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (18 of 18 cells positive, 3 significant after Holm).
 - Why do kNN contexts fail at 0.172%? Check the code, then test per-cluster prior correction.
 - Does the ensemble of balanced contexts hold up with seeds 2-4 (0.858 vs XGBoost 0.865 on 2 seeds)?
 - How much of the 0.10 gap at 0.172% does a class-balanced context close?
