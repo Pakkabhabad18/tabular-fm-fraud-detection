@@ -1,0 +1,28 @@
+model,level,k,pr_auc_mean,f1_mean,context_frauds_mean,seeds_with_no_fraud
+TabICLv2,20,1000,0.9724,0.9289,197.4,0
+TabICLv2,5,1000,0.9257,0.9049,50.6,0
+TabICLv2,5,2000,0.9304,0.908,98.4,0
+TabICLv2,1,1000,0.8343,0.8809,9.6,0
+TabICLv2,1,2000,0.8412,0.8824,21.2,0
+TabICLv2,0.5,1000,0.7694,0.8619,5.8,0
+TabICLv2,0.5,2000,0.7791,0.8603,10.8,0
+TabICLv2,natural,1000,0.5213,0.6086,2.4,1
+TabICLv2,natural,2000,0.656,0.7895,5.4,0
+TabPFN v2,20,1000,0.9688,0.9299,197.4,0
+TabPFN v2,5,1000,0.9249,0.9059,50.6,0
+TabPFN v2,5,2000,0.9298,0.9147,98.4,0
+TabPFN v2,1,1000,0.8284,0.8797,9.6,0
+TabPFN v2,1,2000,0.8458,0.8742,21.2,0
+TabPFN v2,0.5,1000,0.7807,0.8602,5.8,0
+TabPFN v2,0.5,2000,0.7924,0.8589,10.8,0
+TabPFN v2,natural,1000,0.472,0.5663,2.4,1
+TabPFN v2,natural,2000,0.6872,0.764,5.4,0
+"XGBoost (plain, k rows)",20,1000,0.9644,0.9192,197.4,0
+"XGBoost (plain, k rows)",5,1000,0.917,0.903,50.6,0
+"XGBoost (plain, k rows)",5,2000,0.9199,0.9083,98.4,0
+"XGBoost (plain, k rows)",1,1000,0.8325,0.8438,9.6,0
+"XGBoost (plain, k rows)",1,2000,0.8419,0.8723,21.2,0
+"XGBoost (plain, k rows)",0.5,1000,0.7777,0.8097,5.8,0
+"XGBoost (plain, k rows)",0.5,2000,0.7959,0.847,10.8,0
+"XGBoost (plain, k rows)",natural,1000,0.1399,0.1618,2.4,1
+"XGBoost (plain, k rows)",natural,2000,0.5496,0.6162,5.4,0

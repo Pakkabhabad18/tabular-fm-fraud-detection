@@ -77,7 +77,7 @@ A negative result with a supported explanation, for example that the advantage d
 
 - Foundation models tie with full-data XGBoost at 20% and 5% and fall about 0.10 behind at 0.172%.
 - On the same k rows the two families are level at large k. A random 10K context at 0.172% holds only about 16 of the 295 training frauds; that, not the model family, explains the gap.
-- With small contexts (1-2K rows) the foundation models are ahead of XGBoost trained on the same rows in all 18 such cells (+0.003 to +0.065, largest at 0.172%); 3 are significant after Holm correction. From 5K rows on the two are level. Found after looking at the results, so a confirmatory run on fresh contexts is planned.
+- With small contexts (1-2K rows) the foundation models are ahead of XGBoost trained on the same rows in all 18 such cells (+0.003 to +0.065, largest at 0.172%); 3 are significant after Holm correction. From 5K rows on the two are level. Found after looking at the results, so it was tested again on fresh contexts with the rule fixed beforehand (notebook 08): confirmed narrowly (13 of 18 cells, sign test p = 0.048), but the advantage is clear only at 0.172%, where XGBoost on 1-2K rows with 2-3 frauds scores at chance and the foundation models still reach 0.46-0.75. At 20% and 5% the lead is about +0.01; at 1% and 0.5% there is no difference. See `results/confirmatory_*` and the 26 Nov log entry.
 
 **1b. The same runs in F1 and in recall at 0.1% false-positive rate.** F1 uses the threshold that gave the best F1 on the validation set, applied unchanged to test.
 
@@ -105,7 +105,7 @@ A negative result with a supported explanation, for example that the advantage d
 | --- | --- | --- |
 | uniform | 0.686 | 0.762 |
 | balanced (all 295 training frauds) | 0.786 | 0.812 |
-| ensemble of 5 balanced contexts (2 seeds so far) | 0.794 | 0.858 |
+| ensemble of 5 balanced contexts | 0.787 | 0.861 |
 | kNN retrieval | 0.311 | 0.697 |
 | full-data XGBoost | | 0.865 |
 

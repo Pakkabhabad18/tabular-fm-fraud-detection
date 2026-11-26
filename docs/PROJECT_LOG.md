@@ -732,6 +732,49 @@ Three new tests (82 pass).
 
 ---
 
+## 26 Nov: confirmatory run result (notebook 08)
+
+**By the rule fixed beforehand, the hypothesis is confirmed, narrowly.** The TFM is ahead
+of XGBoost on the same fresh rows in 13 of 18 cells, exactly the threshold (sign test
+p = 0.048). The mean gap is +0.239 at 0.172% against +0.002 at the other rates, so it is
+largest at the natural rate. 5 cells are significant after Holm. All 45 fresh contexts
+were checked: none holds a validation or test row. Files:
+`results/confirmatory_small_context.csv`, `confirmatory_verdict.json`,
+`confirmatory_absolute.csv`, `confirmatory_natural_per_seed.csv`.
+
+**What it actually shows, cell by cell:**
+- 20% and 5%: the TFM is slightly ahead in all 6 cells (+0.004 to +0.011); 1 is
+  Holm-significant (TabICLv2 at 20%).
+- 1% and 0.5%: no difference. 3 of 8 cells are slightly positive, 5 slightly negative,
+  none significant. The exploratory "ahead in all 18 cells" did not replicate here.
+- 0.172%: large gaps (+0.11 to +0.38), all Holm-significant. The per-seed numbers explain
+  why: with 1K rows the context holds 0, 2, 3, 5 and 2 frauds. XGBoost scores at chance
+  (0.0017) whenever it has 2 or 3 frauds and only learns with 5 (0.69), while the
+  foundation models reach 0.46-0.75 with 2-3 frauds. At 2K, XGBoost fails on the one seed
+  with 3 frauds (0.003) and is level with or slightly ahead of TabICLv2 on the others.
+- Protocol issue found: at 0.172% with 1K, seed 0's fresh context had no fraud, so the
+  XGBoost tuning step fell back to default settings for all seeds. I checked whether that
+  explains the gap by refitting XGBoost on the five 1K contexts with the settings tuned on
+  the 2K fresh context: same result (chance on the seeds with 2-3 frauds, 0.66 with 5).
+  So the failure comes from having 2-3 frauds, not from the settings. This check was made
+  after seeing the result and is reported as such.
+
+**Corrected reading of the small-context claim.** With a handful of frauds (about 5 or
+fewer) in the training rows, XGBoost often cannot learn at all and the foundation models
+still rank frauds well above chance. With 10 or more frauds the two are level. The
+"small context" pattern is really a "very few positives" pattern, which matches the first
+description I gave on 2 Nov better than the 3 Nov correction. Both readings were made
+after the fact; this run is the first test, and it supports the few-positives version.
+
+**Seeds 2-4 for the W1 policies (Part B, trimmed).** XGBoost on the same stratified and
+balanced rows now has 5 seeds. The ensemble of 5 balanced contexts at 0.172% with 10K rows
+is 0.861 ± 0.031 over 5 seeds (was 0.858 on 2), better than uniform on 5 of 5 seeds
+(+0.098), against 0.865 ± 0.022 for full-data XGBoost: level within the noise. At 1% it is
+0.906 ± 0.018 against 0.894 for full-data XGBoost. Ensemble of uniform contexts and kNN
+keep 2-3 seeds (kNN is explained in notebook 09 instead).
+
+---
+
 ## Open questions I am tracking
 
 - Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (18 of 18 cells positive, 3 significant after Holm).
