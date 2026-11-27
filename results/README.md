@@ -38,8 +38,10 @@ figure 6 were rebuilt from it with `report.rescore_summary` and
 
 | File | Made by | What it holds |
 | --- | --- | --- |
-| `policy_table_tabiclv2.csv` | notebook 04 | every policy vs uniform, paired by seed (figure 4) |
+| `policy_table_tabiclv2.csv` | notebooks 04, 09 | all ten policies vs uniform, paired by seed (figure 4); the 09 printout adds cluster, pca and hard_negative |
 | `context_variance.csv` | notebook 04 | 5 random contexts on one fixed split: noise from the context alone |
+| `policy_same_rows_xgb.csv` | notebook 09 | TabICLv2 vs XGBoost trained on the same context rows, balanced and the three new policies |
+| `knn_diagnosis_summary.csv` | notebook 09 | why kNN contexts fail: groups without fraud, ranking inside groups vs pooled, spread of score scales |
 
 ## Calibration and thresholds (W2)
 

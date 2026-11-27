@@ -775,11 +775,66 @@ keep 2-3 seeds (kNN is explained in notebook 09 instead).
 
 ---
 
+## 27 Nov: the last three W1 policies and the kNN diagnosis, results (notebook 09)
+
+**Three policies, TabICLv2, 5 seeds.** Test PR-AUC, mean over seeds. All three keep the
+same 295 frauds as balanced, so any difference from balanced comes from which legitimate
+rows fill the rest of the context.
+
+| fraud rate | k | uniform | balanced | cluster | pca | hard_negative |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1% | 1K | 0.838 | 0.878 | 0.874 | 0.871 | 0.881 |
+| 1% | 10K | 0.870 | 0.890 | 0.897 | 0.905 | 0.902 |
+| 0.172% | 1K | 0.685 | 0.786 | 0.762 | 0.787 | 0.823 |
+| 0.172% | 2K | 0.698 | 0.799 | 0.762 | 0.812 | 0.837 |
+| 0.172% | 5K | 0.745 | 0.808 | 0.790 | 0.834 | 0.845 |
+| 0.172% | 10K | 0.762 | 0.812 | 0.804 | 0.861 | 0.841 |
+
+- At 1% the three are level with balanced (0.87-0.90). Every one beats uniform on 5 of 5
+  seeds at every k.
+- At 0.172% the choice of legitimate rows matters. `hard_negative` is best with small
+  contexts (+0.04 over balanced at 1K and 2K); `pca` is best at 10K (0.861 ± 0.030), the
+  same as the ensemble of 5 balanced contexts (0.861) and close to full-data XGBoost
+  (0.865 ± 0.022), with one model call instead of five. `cluster` is below balanced.
+- Caveat: these are 3 policies × 8 cells, and I am pointing at the best of them. The
+  differences between the three (0.02-0.06) are about the size of the seed-to-seed std
+  (0.03-0.06), so "pca is best at 10K" is a lead, not a finding.
+
+**XGBoost on the same rows.** TabICLv2 is higher in 27 of 32 cells, but by little: mean
++0.010 to +0.011 for balanced, pca and hard_negative, +0.002 for cluster. The bigger
+effect is that XGBoost gains from the same row choice: at 0.172% with 10K rows XGBoost
+scores 0.837 on the hard_negative rows and 0.846 on the pca rows, against 0.780 on
+uniform rows. So choosing the rows is a data-selection gain that helps both families;
+it is not specific to in-context learning.
+
+**kNN diagnosis (TabICLv2, 2-3 seeds as saved).** Both causes are confirmed:
+- `knn` at 0.172%: 50-90% of test rows were scored by a context with no fraud in it, and
+  6-30% of all frauds got score 0 for that reason. At 1% the same problem shrinks as k
+  grows and is gone at 10K (no test row without a fraud in its context), but PR-AUC is
+  still only 0.69, so it is not the only problem.
+- `knn_balanced`: no group lacks a fraud and no fraud is scored 0. Ranking inside each
+  group is good (mean within-group ROC-AUC 0.96-0.97 at 0.172%) and pooled ROC-AUC is
+  0.93-0.98, yet pooled PR-AUC is only 0.11-0.48. The 99th percentile of legitimate
+  scores differs between groups by a factor of 115 to 1,900. My reading (not tested
+  separately): each group's context holds all 295 frauds next to a different set of
+  nearby legitimate rows, so each group sees a different fraud share and its scores sit
+  on a different scale. Pooled, the top of the
+  ranking is filled with legitimate rows from groups with high scores.
+- Fix, not run: put each group on the same scale before pooling (prior correction with
+  that group's fraud share, or ranks within the group). Left as future work; the kNN
+  policies are reported as a negative result with this explanation.
+
+Files: `results/policy_table_tabiclv2.csv` (all ten policies; the ensemble rows now have
+5 seeds from notebook 08), `results/policy_same_rows_xgb.csv`,
+`results/knn_diagnosis_summary.csv`. Copied from the notebook printout at full precision.
+
+---
+
 ## Open questions I am tracking
 
 - Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (18 of 18 cells positive, 3 significant after Holm).
-- Why do kNN contexts fail at 0.172%? Check the code, then test per-cluster prior correction.
-- Does the ensemble of balanced contexts hold up with seeds 2-4 (0.858 vs XGBoost 0.865 on 2 seeds)?
+- Why do kNN contexts fail at 0.172%? Answered 27 Nov: groups without fraud (knn) and scores on different scales per group (knn_balanced). Per-group prior correction not run yet.
+- Does the ensemble of balanced contexts hold up with seeds 2-4? Answered 26 Nov: 0.861 ± 0.031 on 5 seeds vs 0.865 for full-data XGBoost.
 - How much of the 0.10 gap at 0.172% does a class-balanced context close?
 - Is the TFM gain from more context rows, or from more frauds in the context? (Planned follow-up: hold the number of frauds fixed and vary their share.)
 - How large is context-only noise compared with split-to-split noise? (Measured in notebook 05, cell 6.)
