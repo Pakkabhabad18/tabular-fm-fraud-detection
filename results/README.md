@@ -43,6 +43,13 @@ figure 6 were rebuilt from it with `report.rescore_summary` and
 | `policy_same_rows_xgb.csv` | notebook 09 | TabICLv2 vs XGBoost trained on the same context rows, balanced and the three new policies |
 | `knn_diagnosis_summary.csv` | notebook 09 | why kNN contexts fail: groups without fraud, ranking inside groups vs pooled, spread of score scales |
 
+## Scale and speed (W4)
+
+| File | Made by | What it holds |
+| --- | --- | --- |
+| `scale_natural.csv` | notebook 10 | PR-AUC and F1 at 0.172% against the number of rows each model learns from: XGBoost on 1K to all 170,883 rows, TabICLv2 contexts up to 50K, TabPFN v2 up to 10K (figure 7) |
+| `latency.csv` | notebook 10 | time to score 1, 100 and 1,000 transactions, per model |
+
 ## Calibration and thresholds (W2)
 
 | File | Made by | What it holds |
@@ -68,6 +75,7 @@ figure 6 were rebuilt from it with `report.rescore_summary` and
 | `figures/fig4_policies.png` | the context policies against k, at 0.172% and 1% |
 | `figures/fig5_reliability.png` | calibration at 0.172% before and after prior correction |
 | `figures/fig6_test_mix.png` | same natural-rate models on every test mix: how much of the PR-AUC drop is the test set itself |
+| `figures/fig7_scale.png` | PR-AUC at 0.172% against rows seen: XGBoost on N rows vs foundation-model contexts of N rows |
 
 ## Superseded (kept for the record)
 

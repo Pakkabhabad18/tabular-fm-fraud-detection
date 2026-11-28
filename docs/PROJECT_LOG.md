@@ -830,11 +830,77 @@ Files: `results/policy_table_tabiclv2.csv` (all ten policies; the ensemble rows 
 
 ---
 
+## 28 Nov: scale and speed, results (notebook 10)
+
+The first try on 27 Nov stopped when the free Colab GPU quota ran out after 7 of the 10
+large-context runs; the rerun on 28 Nov skipped the saved runs and finished the rest.
+
+**More rows.** Test PR-AUC at 0.172%, mean ± std over 5 seeds. XGBoost uses the settings
+tuned on all training rows for every N; the foundation models use a uniform context of N
+rows (the same rows XGBoost gets).
+
+| Rows | XGBoost on N rows | TabICLv2 | TabPFN v2 | Frauds in the rows (mean) |
+| --- | --- | --- | --- | --- |
+| 1K | 0.002 (chance) | 0.685 ± 0.030 | 0.699 ± 0.076 | 1.2 |
+| 2K | 0.002 (chance) | 0.698 ± 0.043 | 0.715 ± 0.033 | 3.4 |
+| 5K | 0.521 ± 0.293 | 0.745 ± 0.029 | 0.731 ± 0.051 | 8.8 |
+| 10K | 0.733 ± 0.033 | 0.762 ± 0.020 | 0.741 ± 0.023 | 16 |
+| 20K | 0.790 ± 0.039 | 0.798 ± 0.027 | - | 33 |
+| 50K | 0.834 ± 0.034 | 0.849 ± 0.028 | - | 85 |
+| 100K | 0.849 ± 0.028 | - | - | 170 |
+| 170,883 (all) | 0.865 ± 0.022 | - | - | 295 |
+
+- More context helps TabICLv2 steadily: 0.762 at 10K, 0.798 at 20K, 0.849 at 50K. At 50K
+  it is 0.016 below XGBoost on all rows and level with XGBoost on 100K rows. Of the 0.103
+  gap at 10K, about 85% closes with 50K context rows. So most of the 0.172% gap is the
+  context cap, not the model.
+- With the same rows, TabICLv2 and XGBoost are close from 10K up (+0.03, +0.008, +0.015
+  for TabICLv2 at 10K, 20K, 50K, within one std). This XGBoost keeps the settings tuned
+  on all rows; XGBoost tuned on the 10K rows themselves (notebook 03) scores 0.780, above
+  TabICLv2's 0.762. The fair reading is "level at equal rows", not "better".
+- Below 5K rows (1-6 frauds) XGBoost learns nothing: every row gets the same score and
+  PR-AUC equals the test fraud share. At 5K one seed with 6 frauds is still at chance,
+  hence the 0.29 std. The foundation models are at 0.69-0.75 there.
+- F1 at 50K: TabICLv2 0.844, XGBoost on 50K rows 0.836, XGBoost on all rows 0.865.
+- The printout I read on 27 Nov had the 50K mean at 0.861 on 3 seeds; with all 5 seeds
+  it is 0.849. Recorded here so the change is visible.
+- Cost: one 50K TabICLv2 run took about 6.5 minutes on a T4, against about 1.7 minutes
+  for 20K.
+
+**Speed.** Median of 3 timed calls on a T4 (XGBoost also on CPU), seed 0, natural rate.
+
+| Model | 1 transaction | 1,000 transactions, per transaction |
+| --- | --- | --- |
+| XGBoost, all rows, CPU | 0.59 ms | 0.010 ms |
+| XGBoost, all rows, GPU | 2.9 ms | 0.004 ms |
+| TabICLv2, 1K context | 0.75 s | 1.3 ms |
+| TabICLv2, 10K context | 4.8 s | 5.0 ms |
+| TabPFN v2, 1K context | 1.1 s | 2.1 ms |
+| TabPFN v2, 10K context | 36 s | 40 ms |
+
+- Almost all the cost is the context: TabICLv2 with 10K rows takes 4.8 s for one
+  transaction and 5.0 s for 1,000. Every call processes the whole context again.
+- For one card payment at a time, the foundation models are 1,000 to 60,000 times slower
+  than XGBoost on CPU and far outside a few-millisecond authorisation budget. In batches
+  (a review queue scored every few minutes) TabICLv2 with 10K context handles about 200
+  transactions per second, which is workable for second-line review.
+- This matches the earlier per-1,000-row figures (0.61 s and 5.1 s): those came from
+  scoring 56,962 test rows in chunks of 10,000, where one context pass is shared by
+  10,000 rows.
+- Not tested: reusing the context's computation across calls, which would remove most of
+  the per-call cost if a library supports it. Future work.
+
+Files: `results/scale_natural.csv`, `results/latency.csv`, `results/figures/fig7_scale.png`
+(redrawn on the laptop from the CSV with `scale.plot_scale`, since the Colab copy is not
+on Drive). Copied from the notebook printout at full precision.
+
+---
+
 ## Open questions I am tracking
 
-- Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Notebook 06 supports it on the existing runs (18 of 18 cells positive, 3 significant after Holm).
+- Does the small-context advantage (k ≤ 2K) hold on fresh contexts (confirmatory run) and on IEEE-CIS? Fresh contexts answered 26 Nov: yes by the fixed rule (13 of 18), but only with very few frauds. IEEE-CIS not run (future work).
 - Why do kNN contexts fail at 0.172%? Answered 27 Nov: groups without fraud (knn) and scores on different scales per group (knn_balanced). Per-group prior correction not run yet.
 - Does the ensemble of balanced contexts hold up with seeds 2-4? Answered 26 Nov: 0.861 ± 0.031 on 5 seeds vs 0.865 for full-data XGBoost.
-- How much of the 0.10 gap at 0.172% does a class-balanced context close?
+- How much of the 0.10 gap at 0.172% does a class-balanced context close? Answered 26-27 Nov: balanced 10K 0.812, PCA 10K 0.861, ensemble 0.861 vs 0.865; a 50K uniform context gives 0.849 (28 Nov).
 - Is the TFM gain from more context rows, or from more frauds in the context? (Planned follow-up: hold the number of frauds fixed and vary their share.)
 - How large is context-only noise compared with split-to-split noise? (Measured in notebook 05, cell 6.)
